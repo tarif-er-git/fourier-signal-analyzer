@@ -1,0 +1,7 @@
+git add .
+git commit -m "Updated code and fixed layouts"
+git push
+
+
+
+.\.venv\Scripts\python.exe main.py  
