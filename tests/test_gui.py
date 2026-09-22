@@ -54,6 +54,36 @@ def test_custom_signal_becomes_active_reconstruction_input(application) -> None:
     window.close()
 
 
+def test_custom_drawing_starts_with_full_zero_baseline(application) -> None:
+    window = MainWindow()
+
+    window.start_custom_drawing()
+
+    np.testing.assert_allclose(window.canvas._drawn_t, np.linspace(0.0, 1.0, 1001))
+    np.testing.assert_allclose(window.canvas._drawn_x, 0.0)
+    window.close()
+
+
+def test_custom_drawing_accumulates_multiple_strokes(application) -> None:
+    window = MainWindow()
+    window.start_custom_drawing()
+
+    window.canvas._stroke_t = [0.1, 0.3]
+    window.canvas._stroke_x = [1.0, 1.0]
+    window.canvas._update_drawn_signal()
+    first_stroke = np.asarray(window.canvas._drawn_x, dtype=float).copy()
+
+    window.canvas._stroke_t = [0.7, 0.9]
+    window.canvas._stroke_x = [-1.0, -1.0]
+    window.canvas._update_drawn_signal()
+    second_stroke = np.asarray(window.canvas._drawn_x, dtype=float)
+
+    assert np.max(first_stroke) == pytest.approx(1.0)
+    assert np.min(second_stroke) == pytest.approx(-1.0)
+    assert second_stroke[200] == pytest.approx(first_stroke[200])
+    window.close()
+
+
 def test_nonconstant_custom_signal_is_not_replaced_by_sine(application) -> None:
     window = MainWindow()
     window.start_custom_drawing()

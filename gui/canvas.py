@@ -5,11 +5,12 @@ from collections.abc import Sequence
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QWidget
 
 from gui.drawing import pixel_to_signal_coordinates
+from signal.sampler import prepare_signal_points
 from visualization.error_plot import plot_error
 from visualization.error_plot import plot_error_vs_harmonics
 from visualization.signal_plot import plot_signal
@@ -18,6 +19,8 @@ from visualization.spectrum_plot import plot_fourier_vs_fft_spectrum
 
 class SignalCanvas(FigureCanvasQTAgg):
     """Embed time-domain and convergence Matplotlib axes in a Qt widget."""
+
+    drawing_finished = Signal(object, object)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         self.figure = Figure(figsize=(8, 10), constrained_layout=True)
@@ -30,6 +33,8 @@ class SignalCanvas(FigureCanvasQTAgg):
         self._mouse_pressed = False
         self._drawn_t: list[float] = []
         self._drawn_x: list[float] = []
+        self._stroke_t: list[float] = []
+        self._stroke_x: list[float] = []
         self.show_empty_state()
 
     def _clear_axes(self) -> None:
@@ -65,14 +70,22 @@ class SignalCanvas(FigureCanvasQTAgg):
         self._mouse_pressed = False
         self._drawn_t.clear()
         self._drawn_x.clear()
+        self._stroke_t.clear()
+        self._stroke_x.clear()
+        self._drawn_t.extend(np.linspace(0.0, 1.0, 1001))
+        self._drawn_x.extend(np.zeros(1001))
         self._configure_drawing_axes()
         self.setFocus()
         self.draw_idle()
 
     def finish_drawing(self) -> tuple[np.ndarray, np.ndarray]:
-        """Stop drawing and return the collected raw signal coordinates."""
-        if len(self._drawn_t) < 2:
-            raise ValueError("draw at least two points before finishing")
+        """Stop drawing and return the accumulated editable signal."""
+        has_edited_signal = len(self._stroke_t) >= 2 or (
+            len(self._drawn_x) >= 2
+            and not np.allclose(np.asarray(self._drawn_x, dtype=float), 0.0)
+        )
+        if not has_edited_signal:
+            raise ValueError("Please draw a signal by dragging across the canvas.")
         self._drawing_active = False
         self._mouse_pressed = False
         return np.asarray(self._drawn_t, dtype=float), np.asarray(
@@ -85,6 +98,8 @@ class SignalCanvas(FigureCanvasQTAgg):
         self._mouse_pressed = False
         self._drawn_t.clear()
         self._drawn_x.clear()
+        self._stroke_t.clear()
+        self._stroke_x.clear()
         self.show_empty_state()
 
     def _configure_drawing_axes(self) -> None:
@@ -94,9 +109,21 @@ class SignalCanvas(FigureCanvasQTAgg):
         axis.set_xlim(0.0, 1.0)
         axis.set_ylim(-1.0, 1.0)
         axis.axhline(0.0, color="black", linewidth=0.8, alpha=0.7)
-        axis.set_title("Draw One Period: t = 0 to 1")
+        axis.set_title(
+            "Custom Drawing: One Period (t = 0 to 1)",
+            y=1.08,
+            pad=8,
+        )
         axis.set_xlabel("Time")
         axis.set_ylabel("Amplitude")
+        axis.text(
+            0.5, 1.015,
+            "Drag across the line as many times as needed, then click Finish Drawing.",
+            transform=axis.transAxes,
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
         axis.grid(True, alpha=0.3)
         for other_axis, title in zip(
             self.axes[1:],
@@ -120,30 +147,46 @@ class SignalCanvas(FigureCanvasQTAgg):
         data_x, data_y = self.axes[0].transData.inverted().transform(
             (display_x, display_y)
         )
-        if not (0.0 <= data_x <= 1.0 and -1.0 <= data_y <= 1.0):
+        if not 0.0 <= data_x <= 1.0:
             return None
         return pixel_to_signal_coordinates(
             data_x,
-            0.5 - data_y / 2.0,
+            0.5 - np.clip(data_y, -1.0, 1.0) / 2.0,
             1.0,
             1.0,
         )
 
     def _render_live_drawing(self) -> None:
-        """Render raw points immediately while the mouse is being dragged."""
+        """Render the editable baseline and current stroke immediately."""
         self._configure_drawing_axes()
         if self._drawn_t:
-            self.axes[0].plot(self._drawn_t, self._drawn_x, color="tab:blue")
+            self.axes[0].plot(self._drawn_t, self._drawn_x, color="tab:blue", linewidth=1.2)
         self.draw_idle()
+
+    def _update_drawn_signal(self) -> None:
+        """Apply the current stroke to the accumulated signal by x-position."""
+        if len(self._stroke_t) < 2:
+            return
+        stroke_t, stroke_x = prepare_signal_points(self._stroke_t, self._stroke_x)
+        baseline_t = np.asarray(self._drawn_t, dtype=float)
+        baseline_x = np.asarray(self._drawn_x, dtype=float)
+        left, right = stroke_t[0], stroke_t[-1]
+        covered = (baseline_t >= left) & (baseline_t <= right)
+        baseline_x[covered] = np.interp(
+            baseline_t[covered], stroke_t, stroke_x
+        )
+        self._drawn_x[:] = baseline_x.tolist()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Start collecting points when drawing mode receives left-click."""
         if self._drawing_active and event.button() == Qt.MouseButton.LeftButton:
             point = self._event_to_signal(event)
             if point is not None:
+                self._stroke_t.clear()
+                self._stroke_x.clear()
                 self._mouse_pressed = True
-                self._drawn_t.append(point[0])
-                self._drawn_x.append(point[1])
+                self._stroke_t.append(point[0])
+                self._stroke_x.append(point[1])
                 self._render_live_drawing()
                 event.accept()
                 return
@@ -154,17 +197,24 @@ class SignalCanvas(FigureCanvasQTAgg):
         if self._drawing_active and self._mouse_pressed:
             point = self._event_to_signal(event)
             if point is not None:
-                self._drawn_t.append(point[0])
-                self._drawn_x.append(point[1])
+                self._stroke_t.append(point[0])
+                self._stroke_x.append(point[1])
+                self._update_drawn_signal()
                 self._render_live_drawing()
                 event.accept()
                 return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Stop collecting the current drag while leaving draw mode active."""
-        if event.button() == Qt.MouseButton.LeftButton:
+        """End the current edit stroke without processing the signal."""
+        if (
+            self._drawing_active
+            and event.button() == Qt.MouseButton.LeftButton
+            and self._mouse_pressed
+        ):
             self._mouse_pressed = False
+            if len(self._stroke_t) >= 2:
+                self._update_drawn_signal()
             event.accept()
             return
         super().mouseReleaseEvent(event)

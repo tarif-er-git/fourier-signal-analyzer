@@ -395,14 +395,26 @@ class MainWindow(QMainWindow):
         self.controls.set_current_signal("Drawing custom signal...")
         self.canvas.start_drawing()
         self._update_action_state()
-        self.status_label.setText("Draw while holding the left mouse button, then finish.")
+        self.status_label.setText(
+            "Drag the line as many times as needed, then click Finish Drawing."
+        )
 
-    def finish_custom_drawing(self) -> None:
+    def finish_custom_drawing(
+        self,
+        drawn_t: np.ndarray | None = None,
+        drawn_x: np.ndarray | None = None,
+    ) -> None:
         """Process completed raw points into the application's signal grid."""
         try:
-            drawn_t, drawn_x = self.canvas.finish_drawing()
+            if drawn_t is None or drawn_x is None:
+                drawn_t, drawn_x = self.canvas.finish_drawing()
+            if drawn_t.size < 2:
+                raise ValueError("Please draw a signal by dragging across the canvas.")
             custom_time, custom_signal = prepare_custom_signal(
-                drawn_t, drawn_x, num_samples=1001
+                drawn_t,
+                drawn_x,
+                num_samples=1001,
+                minimum_time_span=0.5,
             )
         except ValueError as error:
             QMessageBox.warning(self, "Drawing not ready", str(error))
@@ -423,6 +435,7 @@ class MainWindow(QMainWindow):
         self.controls.set_drawing_active(False)
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
+        self.canvas.finish_drawing()
         self.canvas.show_original(self.t, self.original_signal)
         self._update_action_state()
         self.status_label.setText("Custom signal ready for reconstruction.")

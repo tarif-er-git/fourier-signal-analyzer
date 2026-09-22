@@ -8,6 +8,65 @@ from signal.preprocessor import preprocess_signal
 from signal.sampler import create_time_grid, prepare_signal_points, resample_signal
 
 
+def normalize_drawn_coordinates(
+    raw_points: Sequence[Sequence[float]],
+    width: float,
+    height: float,
+    *,
+    duration: float = 1.0,
+    amplitude: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert finite pixel ``(x, y)`` points into time and amplitude arrays."""
+    points = np.asarray(raw_points, dtype=float)
+    if points.ndim != 2 or points.shape[1] != 2:
+        raise ValueError("raw drawing points must have shape (n, 2)")
+    if points.shape[0] < 2:
+        raise ValueError("draw at least two points")
+    if not np.all(np.isfinite(points)):
+        raise ValueError("raw drawing points must be finite")
+    normalized = np.asarray(
+        [
+            pixel_to_signal_coordinates(
+                point[0], point[1], width, height,
+                duration=duration, amplitude=amplitude,
+            )
+            for point in points
+        ],
+        dtype=float,
+    )
+    return normalized[:, 0], normalized[:, 1]
+
+
+def process_freehand_points(
+    raw_points: Sequence[Sequence[float]],
+    width: float,
+    height: float,
+    *,
+    num_samples: int = 1001,
+    duration: float = 1.0,
+    amplitude: float = 1.0,
+    minimum_time_span: float = 0.5,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert freehand pixel points into one uniformly sampled signal.
+
+    Points are sorted by horizontal position, so a right-to-left stroke is
+    automatically corrected. Duplicate horizontal positions are averaged by
+    :func:`signal.sampler.prepare_signal_points` before interpolation.
+    """
+    drawn_t, drawn_x = normalize_drawn_coordinates(
+        raw_points, width, height, duration=duration, amplitude=amplitude
+    )
+    if drawn_t.max() - drawn_t.min() < minimum_time_span * duration:
+        raise ValueError("Please draw across a larger portion of the canvas.")
+    return prepare_custom_signal(
+        drawn_t,
+        drawn_x,
+        num_samples=num_samples,
+        duration=duration,
+        amplitude=amplitude,
+    )
+
+
 def pixel_to_signal_coordinates(
     pixel_x: float,
     pixel_y: float,
@@ -40,6 +99,7 @@ def prepare_custom_signal(
     num_samples: int = 1001,
     duration: float = 1.0,
     amplitude: float = 1.0,
+    minimum_time_span: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convert raw mouse points into a uniform, closed one-period signal.
 
@@ -64,6 +124,8 @@ def prepare_custom_signal(
         raise ValueError("duration and amplitude must be positive")
     if np.any(time < 0.0) or np.any(time > duration):
         raise ValueError("drawn time values must lie within the drawing period")
+    if not 0.0 <= minimum_time_span <= 1.0:
+        raise ValueError("minimum_time_span must be between 0 and 1")
     if isinstance(num_samples, bool) or not isinstance(
         num_samples, (int, np.integer)
     ) or num_samples < 2:
@@ -72,6 +134,8 @@ def prepare_custom_signal(
     sorted_time, sorted_values = prepare_signal_points(time, values)
     if sorted_time.size < 2:
         raise ValueError("draw at least two points with different time values")
+    if sorted_time[-1] - sorted_time[0] < minimum_time_span * duration:
+        raise ValueError("Please draw across a larger portion of the canvas.")
 
     uniform_time = create_time_grid(0.0, duration, int(num_samples), endpoint=True)
     uniform_values = resample_signal(sorted_time, sorted_values, uniform_time)
