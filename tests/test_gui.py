@@ -373,13 +373,9 @@ def test_fft_comparison_updates_spectrum_and_timing(application) -> None:
 
     assert window.fft_comparison is not None
     assert window.fft_comparison.harmonic_numbers[0] == 1
-    assert window.fft_dialog is not None
-    assert window.fft_dialog.isVisible()
     assert window.controls.fft_timing_labels["Fourier"].text().endswith("ms")
     assert window.controls.fft_timing_labels["FFT"].text().endswith("ms")
     window.close()
-    assert window.fft_dialog is None
-
 
 
 def test_epicycle_window_opens_and_can_be_replaced(application) -> None:

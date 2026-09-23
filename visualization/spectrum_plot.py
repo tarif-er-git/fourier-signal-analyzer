@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 
 
@@ -85,9 +86,10 @@ def plot_fourier_vs_fft_spectrum(
     _, fft_values = _validate_spectrum_inputs(harmonics, fft_magnitude)
     figure, axes = _get_axes(ax)
 
-    # Slight horizontal offset for side-by-side distinguishable stems
+    # Side-by-side stem offset so both series are clearly distinguishable.
+    # Clipping is kept ON (the default) so stems never render outside the axes box.
     offset = 0.15
-    markerline_fs, stemlines_fs, _ = axes.stem(
+    axes.stem(
         harmonic_values - offset,
         fourier_values,
         linefmt="tab:blue",
@@ -95,10 +97,7 @@ def plot_fourier_vs_fft_spectrum(
         basefmt=" ",
         label="Fourier Series",
     )
-    markerline_fs.set_clip_on(False)
-    stemlines_fs.set_clip_on(False)
-
-    markerline_fft, stemlines_fft, _ = axes.stem(
+    axes.stem(
         harmonic_values + offset,
         fft_values,
         linefmt="tab:orange",
@@ -106,14 +105,17 @@ def plot_fourier_vs_fft_spectrum(
         basefmt=" ",
         label="FFT",
     )
-    markerline_fft.set_clip_on(False)
-    stemlines_fft.set_clip_on(False)
 
     axes.axhline(0, color="gray", linewidth=0.8, alpha=0.5)
 
-    # Linear Y-limits (0 to 1.1) and X-limits to 1 to 20 harmonics
+    # X-axis: add 0.5-unit padding on each side so the first/last stems are
+    # fully inside the plot frame (harmonic 1 stem at 0.85 stays within 0.5).
+    # Y-axis: 0 to 1.1 linear scale.
+    axes.set_xlim(0.5, 20.5)
     axes.set_ylim(0.0, 1.1)
-    axes.set_xlim(1.0, 20.0)
+
+    # Only show integer tick labels (1, 2, 3 …) on the x-axis.
+    axes.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     axes.set_title("Fourier Series vs FFT Magnitude")
     axes.set_xlabel("Harmonic Number")
@@ -123,4 +125,3 @@ def plot_fourier_vs_fft_spectrum(
     if ax is None:
         figure.tight_layout()
     return figure, axes
-

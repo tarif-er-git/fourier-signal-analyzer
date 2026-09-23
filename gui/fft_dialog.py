@@ -12,7 +12,7 @@ from visualization.spectrum_plot import plot_fourier_vs_fft_spectrum
 
 
 class FFTComparisonDialog(QDialog):
-    """Pop-up window comparing Fourier Series and FFT spectra."""
+    """Pop-up window comparing Fourier Series and FFT spectra using stem plots."""
 
     def __init__(
         self,
@@ -23,12 +23,16 @@ class FFTComparisonDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Fourier Series vs FFT Magnitude")
-        self.resize(780, 500)
+        self.resize(700, 500)
+        self.setMinimumSize(700, 500)
 
-        self.figure = Figure(figsize=(7.8, 5.0))
+        # Use subplots_adjust to reserve enough room for axis labels on all sides
+        self.figure = Figure(figsize=(7, 5))
+        self.figure.subplots_adjust(left=0.12, right=0.97, top=0.93, bottom=0.13)
         self.canvas = FigureCanvasQTAgg(self.figure)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.canvas)
 
         self.ax = self.figure.add_subplot(111)
@@ -38,11 +42,4 @@ class FFTComparisonDialog(QDialog):
             fft_magnitudes,
             ax=self.ax,
         )
-        import warnings
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            self.figure.tight_layout()
         self.canvas.draw()
-
-

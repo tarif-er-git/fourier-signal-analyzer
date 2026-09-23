@@ -16,7 +16,11 @@ def test_fourier_vs_fft_plot_returns_figure_and_axes() -> None:
 
     assert isinstance(figure, Figure)
     assert isinstance(axes, Axes)
+    # Padded x-limits keep all stem markers inside the axes
+    assert axes.get_xlim() == (0.5, 20.5)
     assert axes.get_ylim() == (0.0, 1.1)
-    assert axes.get_xlim() == (1.0, 20.0)
+    # X-axis must only show integer tick labels
+    ticks = [t for t in axes.get_xticks() if 0.5 <= t <= 20.5]
+    assert all(float(t).is_integer() for t in ticks)
     plt.close(figure)
 
