@@ -49,6 +49,7 @@ class SignalCanvas(FigureCanvasQTAgg):
 
     def show_empty_state(self) -> None:
         """Display explanatory empty panels before a signal is generated."""
+        self.figure.set_constrained_layout(True)
         self._clear_axes()
         for axis in self.axes:
             axis.set_visible(True)
@@ -169,6 +170,10 @@ class SignalCanvas(FigureCanvasQTAgg):
         axis = self.axes[0]
         for current_axis in self.axes:
             current_axis.set_visible(current_axis is axis)
+        # Disable constrained_layout so the single visible axis can fill the figure
+        # instead of the engine reserving empty space for the 4 hidden 1D subplots.
+        self.figure.set_constrained_layout(False)
+        axis.set_position([0.10, 0.12, 0.78, 0.78])
         original_points = np.column_stack((original_x, original_y))
         reconstructed_points = np.column_stack((reconstructed_x, reconstructed_y))
         original_closed = np.vstack((original_points, original_points[0]))
@@ -204,7 +209,7 @@ class SignalCanvas(FigureCanvasQTAgg):
         axis.set_xlabel("X")
         axis.set_ylabel("Y")
         axis.grid(True, alpha=0.3)
-        axis.legend(loc="best")
+        axis.legend(loc="upper right")
         axis.text(
             0.02,
             0.02,
@@ -220,7 +225,11 @@ class SignalCanvas(FigureCanvasQTAgg):
     def _configure_curve_axes(self) -> None:
         """Configure the first panel as an equal-aspect 2D drawing area."""
         self._clear_axes()
+        # Single-panel mode: disable constrained_layout and fill the figure manually
+        # so the drawing canvas isn't compressed by space reserved for hidden 1D axes.
+        self.figure.set_constrained_layout(False)
         axis = self.axes[0]
+        axis.set_position([0.10, 0.12, 0.78, 0.78])
         axis.set_xlim(-1.0, 1.0)
         axis.set_ylim(-1.0, 1.0)
         axis.set_aspect("equal", adjustable="box")
@@ -468,6 +477,7 @@ class SignalCanvas(FigureCanvasQTAgg):
 
     def show_original(self, t: Sequence[float], original: Sequence[float]) -> None:
         """Display a newly generated original signal and clear old results."""
+        self.figure.set_constrained_layout(True)
         self._clear_axes()
         for axis in self.axes:
             axis.set_visible(True)
@@ -499,6 +509,7 @@ class SignalCanvas(FigureCanvasQTAgg):
         mse_values: Sequence[float] | None = None,
     ) -> None:
         """Display signals and convergence error on the Matplotlib axes."""
+        self.figure.set_constrained_layout(True)
         self._clear_axes()
         for axis in self.axes:
             axis.set_visible(True)

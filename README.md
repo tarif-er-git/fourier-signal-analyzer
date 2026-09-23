@@ -150,12 +150,21 @@ tests/                  Automated unit, integration, and GUI smoke tests
 
 ## Educational Purpose
 
-This project is designed to make the relationship between a signal, its harmonics, and its reconstruction visible. It separates numerical algorithms from plotting, GUI orchestration, and file I/O so that each part can be read, tested, and extended by a CSE student.
+This project is designed to make the relationship between a signal, its harmonics, and its reconstruction visible. It separates numerical algorithms from plotting, GUI orchestration, and file I/O so that each part can be read, tested, and extended by a CSE student. The inclusion of both 1D signal analysis and 2D closed-curve complex epicycles provides a comprehensive interactive learning experience for Fourier mathematics.
 
 ## Known Limitations
 
-- Automatic Gibbs detection is intentionally simple and works best for square-wave-like signals.
-- Mouse drawing represents one period and closes the two boundaries by averaging their values.
+- Automatic Gibbs detection is intentionally simple and works best for square-wave-like signals; it may struggle with highly complex hand-drawn waves.
+- 1D mouse drawing represents one period and closes the two boundaries by averaging their values.
 - FFT and direct Fourier timings are illustrative measurements, not rigorous benchmarks.
-- The application performs calculations synchronously; the current project sizes are small enough for this to remain responsive.
+- The application performs calculations synchronously on the main thread; very large 2D curves or extremely high sample rates could theoretically cause brief UI stutters, though the current limits and capping (e.g., 480 points for epicycle traces) maintain responsiveness.
 - File export currently targets JSON and CSV, not PDF or image reports.
+- Self-intersecting 2D curves will report a mathematical area that may not match the visual enclosed area (due to the standard polygon area formula summing signed areas).
+
+## Future Work
+
+- **Background Threading:** Move the heavy Fourier integrations and FFT computations to background worker threads to ensure the UI remains perfectly fluid even with massive datasets.
+- **Audio Output:** Add a feature to play the 1D reconstructed waveform as sound, allowing users to *hear* the effect of adding higher-frequency harmonics.
+- **Image Tracing:** Implement computer vision (e.g., using OpenCV) to automatically extract a 2D contour from an imported image, rather than relying solely on freehand mouse drawing.
+- **PDF Report Generation:** Add the ability to export a comprehensive, formatted PDF report containing the plots, metrics, and analysis summary for easy submission.
+- **Continuous 3D Epicycles:** Extend the visualization to 3D, showing time/arc-length on a Z-axis, which can further clarify the nature of complex exponential spirals.
