@@ -15,6 +15,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QKeySequence
 
 from fourier.analysis import FourierAnalyzer
+from fourier.curve2d_analysis import (
+    CurveFourierResult,
+    analyze_curve,
+    calculate_curve_error,
+)
 from fourier.fft_comparison import (
     FourierFFTComparison,
     compare_fourier_and_fft,
@@ -69,6 +74,7 @@ class MainWindow(QMainWindow):
         self.drawn_t: np.ndarray | None = None
         self.drawn_x: np.ndarray | None = None
         self.current_curve: Curve2D | None = None
+        self.curve_analysis: CurveFourierResult | None = None
         self.analysis_result: FourierAnalyzer | None = None
         self.reconstructed_signal: np.ndarray | None = None
         self.error: np.ndarray | None = None
@@ -87,6 +93,7 @@ class MainWindow(QMainWindow):
         self.controls.draw_curve_requested.connect(self.start_curve_drawing)
         self.controls.finish_curve_requested.connect(self.finish_curve_drawing)
         self.controls.clear_curve_requested.connect(self.clear_curve)
+        self.controls.analyze_curve_requested.connect(self.analyze_2d_curve)
         self.canvas.curve_finished.connect(self._curve_candidate_ready)
         self.controls.harmonic_changed.connect(self.reconstruct_if_ready)
         self.controls.fft_comparison_requested.connect(self.compare_with_fft)
@@ -191,6 +198,7 @@ class MainWindow(QMainWindow):
         self._close_epicycle_window()
         self.canvas.clear_drawing()
         self.current_curve = None
+        self.curve_analysis = None
         time_values = np.linspace(0.0, 1.0, 1001)
         generator = get_preset_signal(self.controls.selected_signal)
         signal_values = generator(time_values, amplitude=1.0, frequency=1.0)
@@ -213,6 +221,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(False)
+        self.controls.set_curve_analysis_available(False)
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -267,6 +276,7 @@ class MainWindow(QMainWindow):
         self.drawn_t = None
         self.drawn_x = None
         self.current_curve = None
+        self.curve_analysis = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -278,6 +288,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(False)
+        self.controls.set_curve_analysis_available(False)
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -416,6 +427,7 @@ class MainWindow(QMainWindow):
         self._close_epicycle_window()
         self._clear_active_signal()
         self.current_curve = None
+        self.curve_analysis = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -432,6 +444,7 @@ class MainWindow(QMainWindow):
         self.controls.set_curve_active(True)
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
+        self.controls.set_curve_analysis_status("2D curve analysis: --")
         self.controls.set_current_signal("Drawing 2D curve...")
         self.canvas.start_curve_drawing()
         self._update_action_state()
@@ -461,18 +474,52 @@ class MainWindow(QMainWindow):
         self.current_curve = curve
         self.controls.set_curve_active(False)
         self.controls.clear_curve_button.setEnabled(True)
+        self.controls.set_curve_analysis_available(True)
         self.controls.set_current_signal("2D Curve")
         self._update_action_state()
         self.status_label.setText(
-            f"Closed 2D curve ready: {curve.point_count} points. 2D Fourier analysis is not implemented yet."
+            f"Closed 2D curve ready: {curve.point_count} points. Click Analyze Curve."
         )
+
+    def analyze_2d_curve(self) -> None:
+        """Analyze the finalized 2D curve and display a compact summary."""
+        if self.current_curve is None or not self.current_curve.is_valid:
+            QMessageBox.warning(
+                self, "No valid curve", "Finish / close a valid 2D curve first."
+            )
+            return
+        try:
+            result = analyze_curve(
+                self.current_curve,
+                num_samples=512,
+                maximum_harmonic=64,
+            )
+            reconstruction = calculate_curve_error(result, harmonic_count=64)
+        except ValueError as error:
+            QMessageBox.warning(self, "Curve analysis failed", str(error))
+            return
+        self.curve_analysis = result
+        dc_x = result.x_coefficients[result.harmonics == 0][0].real
+        dc_y = result.y_coefficients[result.harmonics == 0][0].real
+        self.controls.set_curve_analysis_status(
+            "2D Curve Analysis\n"
+            f"Points: {result.point_count}\n"
+            f"Harmonics available: {result.maximum_harmonic}\n"
+            f"DC X: {dc_x:.6g} | DC Y: {dc_y:.6g}\n"
+            f"RMSE: {reconstruction.rmse:.6g}\n"
+            f"Max Error: {reconstruction.maximum_error:.6g}"
+        )
+        self.status_label.setText("2D curve Fourier analysis complete.")
 
     def clear_curve(self) -> None:
         """Clear the current 2D curve while remaining in curve mode."""
         self.current_curve = None
+        self.curve_analysis = None
         self.canvas.start_curve_drawing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(True)
+        self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_analysis_status("2D curve analysis: --")
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.status_label.setText("2D curve cleared. Draw a new curve.")
@@ -666,6 +713,8 @@ class MainWindow(QMainWindow):
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(False)
+        self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_analysis_status("2D curve analysis: --")
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.controls.set_current_signal("None")

@@ -26,6 +26,7 @@ class ControlPanel(QWidget):
     draw_curve_requested = Signal()
     finish_curve_requested = Signal()
     clear_curve_requested = Signal()
+    analyze_curve_requested = Signal()
     harmonic_changed = Signal(int)
     fft_comparison_requested = Signal()
     epicycle_requested = Signal()
@@ -45,6 +46,9 @@ class ControlPanel(QWidget):
         self.draw_curve_button = QPushButton("Draw 2D Curve")
         self.finish_curve_button = QPushButton("Finish / Close Curve")
         self.clear_curve_button = QPushButton("Clear Curve")
+        self.analyze_curve_button = QPushButton("Analyze Curve")
+        self.curve_analysis_label = QLabel("2D curve analysis: --")
+        self.curve_analysis_label.setWordWrap(True)
         self.reconstruct_button = QPushButton("Reconstruct")
         self.compare_fft_button = QPushButton("Compare with FFT")
         self.epicycle_button = QPushButton("Show Epicycles")
@@ -81,6 +85,7 @@ class ControlPanel(QWidget):
         self.draw_curve_button.clicked.connect(self.draw_curve_requested)
         self.finish_curve_button.clicked.connect(self.finish_curve_requested)
         self.clear_curve_button.clicked.connect(self.clear_curve_requested)
+        self.analyze_curve_button.clicked.connect(self.analyze_curve_requested)
         self.compare_fft_button.clicked.connect(self.fft_comparison_requested)
         self.epicycle_button.clicked.connect(self.epicycle_requested)
         self.set_drawing_active(False)
@@ -159,10 +164,19 @@ class ControlPanel(QWidget):
         self.draw_curve_button.setEnabled(not active)
         self.finish_curve_button.setEnabled(active)
         self.clear_curve_button.setEnabled(active)
+        self.analyze_curve_button.setEnabled(False)
         self.generate_button.setEnabled(not active)
         self.draw_button.setEnabled(not active)
         self.finish_drawing_button.setEnabled(False if active else self.finish_drawing_button.isEnabled())
         self.reconstruct_button.setEnabled(not active)
+
+    def set_curve_analysis_available(self, available: bool) -> None:
+        """Enable analysis only after a valid curve has been finalized."""
+        self.analyze_curve_button.setEnabled(available)
+
+    def set_curve_analysis_status(self, status: str) -> None:
+        """Display a compact 2D curve analysis result."""
+        self.curve_analysis_label.setText(status)
 
     def set_signal_available(self, available: bool) -> None:
         """Enable actions that require a current signal."""
@@ -210,6 +224,8 @@ class ControlPanel(QWidget):
         curve_row.addWidget(self.finish_curve_button)
         curve_row.addWidget(self.clear_curve_button)
         signal_layout.addLayout(curve_row)
+        signal_layout.addWidget(self.analyze_curve_button)
+        signal_layout.addWidget(self.curve_analysis_label)
         layout.addWidget(signal_group)
 
         analysis_group = QGroupBox("Fourier Analysis")

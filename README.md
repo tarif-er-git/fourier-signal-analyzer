@@ -11,6 +11,7 @@ The project also demonstrates the Gibbs phenomenon, convergence as the number of
 - Sine, square, triangle, and sawtooth presets.
 - Mouse drawing of a custom one-period signal.
 - Mouse drawing of a normalized 2D closed curve.
+- Fourier coefficient analysis and reconstruction of closed 2D curves.
 - Uniform sampling and preprocessing.
 - Numerical Fourier Series coefficients `a0`, `an`, and `bn`.
 - Reconstruction with selectable harmonic count `N`.
@@ -97,7 +98,14 @@ The VS Code project environment can be run explicitly with:
 9. Use `Show Epicycles` for the rotating-vector demonstration.
 10. Use the `File` menu to save, load, or export numerical results.
 
-2D Fourier analysis is intentionally not implemented yet; this mode currently captures, cleans, closes, and normalizes the curve for a future processing step.
+For a finalized 2D curve, click `Analyze Curve`. The curve is parameterized by normalized cumulative arc length so uneven mouse speed does not change the sampling density. X and Y are analyzed independently as complex Fourier series:
+
+```text
+x(t) = sum_k Cx[k] exp(j*2*pi*k*t)
+y(t) = sum_k Cy[k] exp(j*2*pi*k*t)
+```
+
+The DC coefficients `Cx[0]` and `Cy[0]` preserve the curve's average position. Positive and negative harmonics are stored with their magnitudes and phases. Reconstruction keeps the DC term and includes symmetric harmonics from `-N` through `N`. The reported MSE, RMSE, and maximum error use the Euclidean distance between original and reconstructed X/Y samples.
 
 ## Testing
 

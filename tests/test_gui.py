@@ -120,6 +120,23 @@ def test_2d_curve_mode_finalizes_and_clears_curve(application) -> None:
     window.close()
 
 
+def test_2d_curve_can_be_analyzed_from_control_panel(application) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0], [0.0, -0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+    window.controls.analyze_curve_button.click()
+
+    assert window.curve_analysis is not None
+    assert "2D Curve Analysis" in window.controls.curve_analysis_label.text()
+    assert "DC X:" in window.controls.curve_analysis_label.text()
+    window.close()
+
+
 def test_2d_mouse_coordinates_follow_rendered_axis_bounds(application) -> None:
     window = MainWindow()
     window.start_curve_drawing()

@@ -38,7 +38,9 @@ The left and right edges represent the same periodic boundary. The two endpoint 
 3. Release the mouse to preview the candidate as a closed curve.
 4. Click `Finish / Close Curve` to finalize it, or `Clear Curve` to start again.
 
-The curve stores the original captured points and a cleaned representation with invalid and consecutive duplicate points removed. Its bounding box and centered normalized coordinates are also retained. The first point is connected to the last point for display without duplicating the first vertex in the stored curve. Fourier analysis of 2D curves is reserved for a later feature.
+The curve stores the original captured points and a cleaned representation with invalid and consecutive duplicate points removed. Its bounding box and centered normalized coordinates are also retained. The first point is connected to the last point for display without duplicating the first vertex in the stored curve.
+
+Click `Analyze Curve` after finalizing a curve. The analysis uses normalized cumulative arc length as the periodic parameter, resamples X and Y uniformly, and calculates separate complex Fourier coefficients for both coordinates. The DC coefficients preserve the average X/Y position. Reconstruction includes DC plus symmetric positive and negative harmonics. Reported MSE, RMSE, and maximum error are based on pointwise Euclidean X/Y differences.
 
 ## Spectrum
 
