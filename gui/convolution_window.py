@@ -279,12 +279,12 @@ class ConvolutionWindow(QMainWindow):
         speed_row = QHBoxLayout()
         speed_row.addWidget(QLabel("Speed:"))
         self._speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self._speed_slider.setRange(1, 10)
-        self._speed_slider.setValue(5)
-        self._speed_slider.setToolTip("Animation speed (1=slow, 10=fast)")
+        self._speed_slider.setRange(0, 50)
+        self._speed_slider.setValue(25)
+        self._speed_slider.setToolTip("Animation speed (0=slowest, 50=fastest)")
         self._speed_slider.valueChanged.connect(self._on_speed_changed)
-        self._speed_label = QLabel("5")
-        self._speed_label.setMinimumWidth(20)
+        self._speed_label = QLabel("25")
+        self._speed_label.setMinimumWidth(24)
         speed_row.addWidget(self._speed_slider, 1)
         speed_row.addWidget(self._speed_label)
         pb_layout.addLayout(speed_row)
@@ -782,9 +782,13 @@ class ConvolutionWindow(QMainWindow):
         self._draw_frame(0)
 
     def _on_speed_changed(self, value: int) -> None:
-        """Adjust QTimer interval based on speed slider."""
+        """Adjust QTimer interval based on speed slider (0=slowest, 50=fastest)."""
         self._speed_label.setText(str(value))
-        interval = max(12, 132 - value * 12)
+        if value <= 25:
+            interval = int(round(200 - (value / 25.0) * (200 - 30)))
+        else:
+            interval = int(round(30 - ((value - 25.0) / 25.0) * (30 - 5)))
+        interval = max(4, interval)
         self._timer.setInterval(interval)
 
     def _on_shift_slider_changed(self, slider_value: int) -> None:

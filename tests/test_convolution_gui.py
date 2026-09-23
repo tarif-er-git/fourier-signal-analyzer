@@ -112,6 +112,22 @@ class TestConvolutionWindowGUI:
         # Test playback
         win.play()
         assert win._state == _PLAYING
+
+        # Test speed slider range (0 to 50)
+        assert win._speed_slider.minimum() == 0
+        assert win._speed_slider.maximum() == 50
+        win._speed_slider.setValue(0)
+        assert win._speed_label.text() == "0"
+        assert win._timer.interval() == 200
+
+        win._speed_slider.setValue(25)
+        assert win._speed_label.text() == "25"
+        assert win._timer.interval() == 30
+
+        win._speed_slider.setValue(50)
+        assert win._speed_label.text() == "50"
+        assert win._timer.interval() <= 10
+
         win.pause()
         assert win._state == _PAUSED
         win.reset()
