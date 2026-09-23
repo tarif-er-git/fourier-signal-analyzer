@@ -1,4 +1,4 @@
-"""Numerical convolution analysis for the Signal Sketch and Decompose application.
+"""Numerical convolution analysis for the Fourier Craft application.
 
 Mathematical Convention
 -----------------------

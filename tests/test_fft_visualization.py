@@ -16,4 +16,7 @@ def test_fourier_vs_fft_plot_returns_figure_and_axes() -> None:
 
     assert isinstance(figure, Figure)
     assert isinstance(axes, Axes)
+    assert axes.get_ylim() == (0.0, 1.1)
+    assert axes.get_xlim() == (1.0, 20.0)
     plt.close(figure)
+

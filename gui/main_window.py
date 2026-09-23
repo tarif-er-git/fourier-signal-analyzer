@@ -1,4 +1,4 @@
-"""Main PySide6 controller for the Signal Sketch and Decompose app."""
+"""Main PySide6 controller for the Fourier Craft app."""
 
 import numpy as np
 from PySide6.QtCore import Qt
@@ -41,6 +41,7 @@ from gui.curve2d_spectrum_window import Curve2DSpectrumWindow
 from gui.curve2d_error_window import Curve2DErrorWindow
 from gui.drawing import prepare_custom_signal
 from gui.epicycle_window import EpicycleWindow
+from gui.fft_dialog import FFTComparisonDialog
 from signal.curve2d import Curve2D
 from metrics.convergence import ConvergenceResult, analyze_convergence
 from metrics.error import (
@@ -73,7 +74,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Signal Sketch and Decompose")
+        self.setWindowTitle("Fourier Craft")
         self.resize(1350, 900)
 
         self.controls = ControlPanel()
@@ -103,6 +104,7 @@ class MainWindow(QMainWindow):
         self.curve2d_spectrum_window: Curve2DSpectrumWindow | None = None
         self.curve2d_error_window: Curve2DErrorWindow | None = None
         self.convolution_window: ConvolutionWindow | None = None
+        self.fft_dialog: FFTComparisonDialog | None = None
         self.file_actions: dict[str, QAction] = {}
 
         self._build_layout()
@@ -210,8 +212,8 @@ class MainWindow(QMainWindow):
         """Show a concise educational project description."""
         QMessageBox.about(
             self,
-            "About Signal Sketch and Decompose",
-            "Signal Sketch and Decompose\n\n"
+            "About Fourier Craft",
+            "Fourier Craft\n\n"
             "An educational Fourier Series visualization tool.\n\n"
             "Explore Fourier analysis, synthesis, harmonic components, "
             "reconstruction error, the Gibbs phenomenon, FFT comparison, "
@@ -330,7 +332,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            save_curve(path, self.current_curve, {"application": "Signal Sketch and Decompose"})
+            save_curve(path, self.current_curve, {"application": "Fourier Craft"})
         except (OSError, ValueError) as error:
             QMessageBox.critical(self, "2D curve save failed", str(error))
             return
@@ -973,11 +975,7 @@ class MainWindow(QMainWindow):
         self.fft_comparison = compare_fourier_and_fft(
             self.t, self.original_signal, self.analysis_result
         )
-        self.canvas.show_fft_comparison(
-            self.fft_comparison.harmonic_numbers,
-            self.fft_comparison.fourier_magnitudes,
-            self.fft_comparison.fft_magnitudes,
-        )
+        self._show_fft_comparison_dialog()
         fft_samples, _ = prepare_fft_period_samples(self.t, self.original_signal)
         timing = compare_performance(
             [fft_samples.size], harmonics=min(self.MAX_HARMONICS, fft_samples.size // 2 - 1)
@@ -985,6 +983,27 @@ class MainWindow(QMainWindow):
         self.controls.set_fft_timing(timing.fourier_seconds, timing.fft_seconds)
         self._update_action_state()
         self.status_label.setText("Fourier Series and FFT spectra compared.")
+
+    def _show_fft_comparison_dialog(self) -> None:
+        """Open or refresh the separate FFT comparison pop-up window."""
+        if self.fft_comparison is None:
+            return
+        self._close_fft_dialog()
+        self.fft_dialog = FFTComparisonDialog(
+            self.fft_comparison.harmonic_numbers,
+            self.fft_comparison.fourier_magnitudes,
+            self.fft_comparison.fft_magnitudes,
+            parent=self,
+        )
+        self.fft_dialog.show()
+        self.fft_dialog.raise_()
+        self.fft_dialog.activateWindow()
+
+    def _close_fft_dialog(self) -> None:
+        """Close and release the FFT comparison dialog if open."""
+        if self.fft_dialog is not None:
+            self.fft_dialog.close()
+            self.fft_dialog = None
 
     def show_epicycles(self) -> None:
         """Open or replace the dedicated epicycle animation window."""
@@ -1093,4 +1112,5 @@ class MainWindow(QMainWindow):
         self._close_curve2d_spectrum_window()
         self._close_curve2d_error_window()
         self._close_convolution_window()
+        self._close_fft_dialog()
         super().closeEvent(event)

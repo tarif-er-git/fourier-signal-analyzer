@@ -1,7 +1,7 @@
-# Project Overview: Signal Sketch and Decompose
+# Project Overview: Fourier Craft
 
 ## Project Title
-Signal Sketch and Decompose: An Interactive 1D Signal and 2D Closed-Curve Fourier Analysis Educational Tool
+Fourier Craft: An Interactive 1D Signal and 2D Closed-Curve Fourier Analysis Educational Tool
 
 ## Problem Statement
 Understanding the Fourier Series and its practical applications is often challenging for students due to the abstract nature of the underlying mathematics. Traditional learning methods often lack interactive visual feedback, making it difficult to intuitively grasp concepts such as harmonic synthesis, the Gibbs phenomenon, error convergence, and complex Fourier descriptors for 2D shapes. There is a need for a unified, interactive tool that bridges the gap between mathematical theory and visual, programmatic realization for both 1D signals and 2D contours.

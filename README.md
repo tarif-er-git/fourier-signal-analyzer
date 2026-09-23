@@ -1,8 +1,8 @@
-# Signal Sketch and Decompose
+# Fourier Craft
 
 ## Overview
 
-Signal Sketch and Decompose is an educational Python application for exploring periodic signals and Fourier Series. Users can generate preset waveforms, draw a custom one-period signal, inspect Fourier harmonics, reconstruct the signal with a selectable number of terms, and study reconstruction error.
+Fourier Craft is an educational Python application for exploring periodic signals and Fourier Series. Users can generate preset waveforms, draw a custom one-period signal, inspect Fourier harmonics, reconstruct the signal with a selectable number of terms, and study reconstruction error.
 
 The project also demonstrates the Gibbs phenomenon, convergence as the number of harmonics changes, Fourier Series versus NumPy FFT, and rotating epicycles. Signals and numerical results can be saved or exported for further study.
 

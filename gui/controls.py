@@ -1,4 +1,4 @@
-"""Reusable controls for the Signal Sketch and Decompose window."""
+"""Reusable controls for the Fourier Craft window."""
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (

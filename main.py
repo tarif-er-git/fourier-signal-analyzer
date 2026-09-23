@@ -1,4 +1,4 @@
-"""Entry point for the Signal Sketch and Decompose GUI."""
+"""Entry point for the Fourier Craft GUI."""
 
 import sys
 

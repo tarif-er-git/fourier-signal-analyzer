@@ -26,7 +26,7 @@ class SignalCanvas(FigureCanvasQTAgg):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         self.figure = Figure(figsize=(8, 10), constrained_layout=True)
-        self.axes = self.figure.subplots(5, 1, sharex=False)
+        self.axes = self.figure.subplots(4, 1, sharex=False)
         super().__init__(self.figure)
         self.setParent(parent)
         self.setMouseTracking(True)
@@ -58,7 +58,6 @@ class SignalCanvas(FigureCanvasQTAgg):
             "Reconstructed Signal",
             "Reconstruction Error",
             "Error vs Number of Harmonics",
-            "Fourier Series vs FFT",
         )
         for axis, title in zip(self.axes, titles):
             axis.set_title(title)
@@ -68,8 +67,6 @@ class SignalCanvas(FigureCanvasQTAgg):
         self.axes[2].set_ylabel("Error")
         self.axes[3].set_xlabel("Number of Harmonics (N)")
         self.axes[3].set_ylabel("Mean Squared Error")
-        self.axes[4].set_xlabel("Harmonic Number")
-        self.axes[4].set_ylabel("Magnitude")
         self.draw_idle()
 
     def start_drawing(self) -> None:
@@ -346,7 +343,6 @@ class SignalCanvas(FigureCanvasQTAgg):
                 "Reconstructed Signal",
                 "Reconstruction Error",
                 "Error vs Number of Harmonics",
-                "Fourier Series vs FFT",
             ),
         ):
             other_axis.set_title(title)
@@ -485,7 +481,6 @@ class SignalCanvas(FigureCanvasQTAgg):
         self.axes[1].set_title("Reconstructed Signal")
         self.axes[2].set_title("Reconstruction Error")
         self.axes[3].set_title("Error vs Number of Harmonics")
-        self.axes[4].set_title("Fourier Series vs FFT")
         for axis in self.axes[1:]:
             axis.grid(True, alpha=0.3)
         self.axes[0].set_xlabel("")
@@ -494,8 +489,6 @@ class SignalCanvas(FigureCanvasQTAgg):
         self.axes[2].set_ylabel("Error")
         self.axes[3].set_xlabel("Number of Harmonics (N)")
         self.axes[3].set_ylabel("Mean Squared Error")
-        self.axes[4].set_xlabel("Harmonic Number")
-        self.axes[4].set_ylabel("Magnitude")
         self.draw_idle()
 
     def show_reconstruction(
@@ -530,10 +523,6 @@ class SignalCanvas(FigureCanvasQTAgg):
             self.axes[3].set_xlabel("Number of Harmonics (N)")
             self.axes[3].set_ylabel("Mean Squared Error")
             self.axes[3].grid(True, alpha=0.3)
-        self.axes[4].set_title("Fourier Series vs FFT")
-        self.axes[4].set_xlabel("Harmonic Number")
-        self.axes[4].set_ylabel("Magnitude")
-        self.axes[4].grid(True, alpha=0.3)
         self.axes[0].set_xlabel("")
         self.axes[1].set_xlabel("")
         self.axes[2].set_xlabel("Time")
@@ -545,12 +534,5 @@ class SignalCanvas(FigureCanvasQTAgg):
         fourier_magnitudes: Sequence[float],
         fft_magnitudes: Sequence[float],
     ) -> None:
-        """Display a precomputed Fourier Series versus FFT spectrum."""
-        self.axes[4].clear()
-        plot_fourier_vs_fft_spectrum(
-            harmonics,
-            fourier_magnitudes,
-            fft_magnitudes,
-            ax=self.axes[4],
-        )
-        self.draw_idle()
+        """FFT comparison is now displayed in a dedicated pop-up window."""
+        pass

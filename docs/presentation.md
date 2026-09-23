@@ -2,7 +2,7 @@
 
 ## Slide 1: Title
 
-**Signal Sketch and Decompose**
+**Fourier Craft**
 
 An interactive educational Fourier Series tool for 1D signals and 2D closed curves.
 
