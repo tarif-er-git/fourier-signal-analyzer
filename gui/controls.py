@@ -34,6 +34,7 @@ class ControlPanel(QWidget):
     harmonic_changed = Signal(int)
     fft_comparison_requested = Signal()
     epicycle_requested = Signal()
+    convolution_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -67,6 +68,11 @@ class ControlPanel(QWidget):
         self.reconstruct_button = QPushButton("Reconstruct")
         self.compare_fft_button = QPushButton("Compare with FFT")
         self.epicycle_button = QPushButton("Show Epicycles")
+        self.convolution_button = QPushButton("Convolution Simulation")
+        self.convolution_button.setToolTip(
+            "Open the interactive convolution visualizer.\n"
+            "Shows x(\u03c4), h(t\u2212\u03c4), and y(t) = x * h."
+        )
         self.current_signal_label = QLabel("Current signal: None")
         self.current_signal_label.setWordWrap(True)
 
@@ -109,6 +115,7 @@ class ControlPanel(QWidget):
         )
         self.compare_fft_button.clicked.connect(self.fft_comparison_requested)
         self.epicycle_button.clicked.connect(self.epicycle_requested)
+        self.convolution_button.clicked.connect(self.convolution_requested)
         self._signal_available = False
         self.set_drawing_active(False)
         self.set_curve_active(False)
@@ -352,5 +359,6 @@ class ControlPanel(QWidget):
         advanced_layout = QVBoxLayout(advanced_group)
         advanced_layout.addWidget(self.compare_fft_button)
         advanced_layout.addWidget(self.epicycle_button)
+        advanced_layout.addWidget(self.convolution_button)
         layout.addWidget(advanced_group)
         layout.addStretch()

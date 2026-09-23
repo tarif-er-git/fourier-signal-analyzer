@@ -35,6 +35,7 @@ from fourier.synthesis import FourierSynthesizer
 from fourier.spectrum import FourierSpectrum
 from gui.canvas import SignalCanvas
 from gui.controls import ControlPanel
+from gui.convolution_window import ConvolutionWindow
 from gui.curve2d_epicycle_window import Curve2DEpicycleWindow
 from gui.curve2d_spectrum_window import Curve2DSpectrumWindow
 from gui.curve2d_error_window import Curve2DErrorWindow
@@ -101,6 +102,7 @@ class MainWindow(QMainWindow):
         self.curve2d_epicycle_window: Curve2DEpicycleWindow | None = None
         self.curve2d_spectrum_window: Curve2DSpectrumWindow | None = None
         self.curve2d_error_window: Curve2DErrorWindow | None = None
+        self.convolution_window: ConvolutionWindow | None = None
         self.file_actions: dict[str, QAction] = {}
 
         self._build_layout()
@@ -121,6 +123,7 @@ class MainWindow(QMainWindow):
         self.controls.harmonic_changed.connect(self.reconstruct_if_ready)
         self.controls.fft_comparison_requested.connect(self.compare_with_fft)
         self.controls.epicycle_requested.connect(self.show_epicycles)
+        self.controls.convolution_requested.connect(self.show_convolution)
         self._update_action_state()
 
     def _build_layout(self) -> None:
@@ -1015,6 +1018,23 @@ class MainWindow(QMainWindow):
             self.epicycle_window.close()
             self.epicycle_window = None
 
+    def show_convolution(self) -> None:
+        """Open or bring to front the convolution simulation window."""
+        if self.convolution_window is None or not self.convolution_window.isVisible():
+            self._close_convolution_window()
+            self.convolution_window = ConvolutionWindow(self)
+            self.convolution_window.show()
+        else:
+            self.convolution_window.raise_()
+            self.convolution_window.activateWindow()
+        self.status_label.setText("Convolution Simulation opened.")
+
+    def _close_convolution_window(self) -> None:
+        """Stop and release the convolution window, if open."""
+        if self.convolution_window is not None:
+            self.convolution_window.close()
+            self.convolution_window = None
+
     def _close_curve2d_epicycle_window(self) -> None:
         """Stop and release the 2D epicycle window, if open."""
         if self.curve2d_epicycle_window is not None:
@@ -1052,6 +1072,8 @@ class MainWindow(QMainWindow):
         self._close_curve2d_epicycle_window()
         self._close_curve2d_spectrum_window()
         self._close_curve2d_error_window()
+        # Convolution window is independent; leave it open but reset its state
+        # so the user can still browse results while the main app resets.
         self.controls.reset_metrics()
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
@@ -1070,4 +1092,5 @@ class MainWindow(QMainWindow):
         self._close_curve2d_epicycle_window()
         self._close_curve2d_spectrum_window()
         self._close_curve2d_error_window()
+        self._close_convolution_window()
         super().closeEvent(event)
