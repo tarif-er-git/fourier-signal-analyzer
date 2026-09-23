@@ -27,6 +27,8 @@ class ControlPanel(QWidget):
     finish_curve_requested = Signal()
     clear_curve_requested = Signal()
     analyze_curve_requested = Signal()
+    curve_epicycle_requested = Signal()
+    curve_harmonic_changed = Signal(int)
     harmonic_changed = Signal(int)
     fft_comparison_requested = Signal()
     epicycle_requested = Signal()
@@ -47,8 +49,17 @@ class ControlPanel(QWidget):
         self.finish_curve_button = QPushButton("Finish / Close Curve")
         self.clear_curve_button = QPushButton("Clear Curve")
         self.analyze_curve_button = QPushButton("Analyze Curve")
+        self.curve_epicycle_button = QPushButton("2D Epicycle View")
         self.curve_analysis_label = QLabel("2D curve analysis: --")
         self.curve_analysis_label.setWordWrap(True)
+        self.curve_harmonic_slider = QSlider(Qt.Orientation.Horizontal)
+        self.curve_harmonic_slider.setRange(0, 0)
+        self.curve_harmonic_slider.setValue(0)
+        self.curve_harmonic_value = QLabel("0")
+        self.curve_harmonic_value.setMinimumWidth(24)
+        self.curve_harmonic_value.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.curve_stats_label = QLabel("2D Fourier Reconstruction\n--")
+        self.curve_stats_label.setWordWrap(True)
         self.reconstruct_button = QPushButton("Reconstruct")
         self.compare_fft_button = QPushButton("Compare with FFT")
         self.epicycle_button = QPushButton("Show Epicycles")
@@ -86,10 +97,15 @@ class ControlPanel(QWidget):
         self.finish_curve_button.clicked.connect(self.finish_curve_requested)
         self.clear_curve_button.clicked.connect(self.clear_curve_requested)
         self.analyze_curve_button.clicked.connect(self.analyze_curve_requested)
+        self.curve_epicycle_button.clicked.connect(self.curve_epicycle_requested)
+        self.curve_harmonic_slider.valueChanged.connect(
+            self._curve_harmonic_value_changed
+        )
         self.compare_fft_button.clicked.connect(self.fft_comparison_requested)
         self.epicycle_button.clicked.connect(self.epicycle_requested)
         self.set_drawing_active(False)
         self.set_curve_active(False)
+        self.set_curve_analysis_available(False)
         self.set_signal_available(False)
         self.set_reconstruction_available(False)
 
@@ -165,18 +181,40 @@ class ControlPanel(QWidget):
         self.finish_curve_button.setEnabled(active)
         self.clear_curve_button.setEnabled(active)
         self.analyze_curve_button.setEnabled(False)
+        self.curve_epicycle_button.setEnabled(False)
+        self.curve_harmonic_slider.setEnabled(False)
         self.generate_button.setEnabled(not active)
         self.draw_button.setEnabled(not active)
         self.finish_drawing_button.setEnabled(False if active else self.finish_drawing_button.isEnabled())
         self.reconstruct_button.setEnabled(not active)
 
     def set_curve_analysis_available(self, available: bool) -> None:
-        """Enable analysis only after a valid curve has been finalized."""
+        """Enable the Analyze Curve action after a valid curve is finalized."""
         self.analyze_curve_button.setEnabled(available)
+
+    def set_curve_epicycle_available(self, available: bool) -> None:
+        """Enable the 2D epicycle view after Fourier analysis succeeds."""
+        self.curve_epicycle_button.setEnabled(available)
+
+    def set_curve_reconstruction_available(self, available: bool) -> None:
+        """Enable harmonic reconstruction controls after analysis succeeds."""
+        self.curve_harmonic_slider.setEnabled(available)
 
     def set_curve_analysis_status(self, status: str) -> None:
         """Display a compact 2D curve analysis result."""
         self.curve_analysis_label.setText(status)
+
+    def set_curve_harmonic_range(self, maximum: int, value: int = 0) -> None:
+        """Set the available 2D harmonic range and selected value."""
+        self.curve_harmonic_slider.blockSignals(True)
+        self.curve_harmonic_slider.setRange(0, maximum)
+        self.curve_harmonic_slider.setValue(value)
+        self.curve_harmonic_slider.blockSignals(False)
+        self.curve_harmonic_value.setText(str(value))
+
+    def set_curve_stats(self, stats: str) -> None:
+        """Display current 2D reconstruction statistics."""
+        self.curve_stats_label.setText(stats)
 
     def set_signal_available(self, available: bool) -> None:
         """Enable actions that require a current signal."""
@@ -198,6 +236,11 @@ class ControlPanel(QWidget):
         """Update the visible N and notify the controller for live updates."""
         self.harmonic_value.setText(str(value))
         self.harmonic_changed.emit(value)
+
+    def _curve_harmonic_value_changed(self, value: int) -> None:
+        """Update the visible 2D harmonic count and notify the controller."""
+        self.curve_harmonic_value.setText(str(value))
+        self.curve_harmonic_changed.emit(value)
 
     def _build_layout(self) -> None:
         """Create the compact control-panel layout."""
@@ -225,7 +268,14 @@ class ControlPanel(QWidget):
         curve_row.addWidget(self.clear_curve_button)
         signal_layout.addLayout(curve_row)
         signal_layout.addWidget(self.analyze_curve_button)
+        signal_layout.addWidget(self.curve_epicycle_button)
         signal_layout.addWidget(self.curve_analysis_label)
+        curve_harmonic_row = QHBoxLayout()
+        curve_harmonic_row.addWidget(QLabel("2D Harmonics N:"))
+        curve_harmonic_row.addWidget(self.curve_harmonic_slider)
+        curve_harmonic_row.addWidget(self.curve_harmonic_value)
+        signal_layout.addLayout(curve_harmonic_row)
+        signal_layout.addWidget(self.curve_stats_label)
         layout.addWidget(signal_group)
 
         analysis_group = QGroupBox("Fourier Analysis")

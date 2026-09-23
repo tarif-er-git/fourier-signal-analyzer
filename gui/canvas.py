@@ -143,6 +143,69 @@ class SignalCanvas(FigureCanvasQTAgg):
             self._configure_curve_axes()
             self.draw_idle()
 
+    def show_curve_reconstruction(
+        self,
+        original_x: Sequence[float],
+        original_y: Sequence[float],
+        reconstructed_x: Sequence[float],
+        reconstructed_y: Sequence[float],
+        harmonic_count: int,
+        rmse: float,
+        maximum_error: float,
+    ) -> None:
+        """Display original and reconstructed closed curves in one overlay."""
+        self._clear_axes()
+        axis = self.axes[0]
+        for current_axis in self.axes:
+            current_axis.set_visible(current_axis is axis)
+        original_points = np.column_stack((original_x, original_y))
+        reconstructed_points = np.column_stack((reconstructed_x, reconstructed_y))
+        original_closed = np.vstack((original_points, original_points[0]))
+        reconstructed_closed = np.vstack(
+            (reconstructed_points, reconstructed_points[0])
+        )
+        axis.plot(
+            original_closed[:, 0],
+            original_closed[:, 1],
+            color="tab:blue",
+            linewidth=1.5,
+            label="Original curve",
+        )
+        axis.plot(
+            reconstructed_closed[:, 0],
+            reconstructed_closed[:, 1],
+            color="tab:orange",
+            linewidth=1.3,
+            linestyle="--",
+            label=f"Reconstructed (N={harmonic_count})",
+        )
+        all_points = np.vstack((original_points, reconstructed_points))
+        min_x, min_y = np.min(all_points, axis=0)
+        max_x, max_y = np.max(all_points, axis=0)
+        span = max(max_x - min_x, max_y - min_y, 1e-9)
+        margin = 0.08 * span
+        center_x = (min_x + max_x) / 2.0
+        center_y = (min_y + max_y) / 2.0
+        axis.set_xlim(center_x - span / 2.0 - margin, center_x + span / 2.0 + margin)
+        axis.set_ylim(center_y - span / 2.0 - margin, center_y + span / 2.0 + margin)
+        axis.set_aspect("equal", adjustable="box")
+        axis.set_title("2D Fourier Reconstruction")
+        axis.set_xlabel("X")
+        axis.set_ylabel("Y")
+        axis.grid(True, alpha=0.3)
+        axis.legend(loc="best")
+        axis.text(
+            0.02,
+            0.02,
+            f"Harmonics: {harmonic_count}\nRMSE: {rmse:.6g}\nMax Error: {maximum_error:.6g}",
+            transform=axis.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=9,
+            bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"},
+        )
+        self.draw_idle()
+
     def _configure_curve_axes(self) -> None:
         """Configure the first panel as an equal-aspect 2D drawing area."""
         self._clear_axes()

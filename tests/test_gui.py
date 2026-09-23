@@ -137,6 +137,46 @@ def test_2d_curve_can_be_analyzed_from_control_panel(application) -> None:
     window.close()
 
 
+def test_2d_harmonic_slider_updates_overlay_metrics(application) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0], [0.0, -0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+    window.controls.analyze_curve_button.click()
+
+    assert window.controls.curve_harmonic_slider.isEnabled()
+    window.controls.curve_harmonic_slider.setValue(3)
+
+    assert window.curve_reconstruction is not None
+    assert window.curve_reconstruction.harmonic_count == 3
+    assert "Harmonics Used: 3" in window.controls.curve_stats_label.text()
+    window.close()
+
+
+def test_2d_epicycle_view_uses_analyzed_curve(application) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0], [0.0, -0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+    window.controls.analyze_curve_button.click()
+    window.controls.curve_epicycle_button.click()
+
+    assert window.curve2d_epicycle_window is not None
+    window.curve2d_epicycle_window.pause()
+    window.curve2d_epicycle_window.reset()
+    window.curve2d_epicycle_window.close()
+    window.curve2d_epicycle_window = None
+    window.close()
+
+
 def test_2d_mouse_coordinates_follow_rendered_axis_bounds(application) -> None:
     window = MainWindow()
     window.start_curve_drawing()

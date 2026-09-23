@@ -12,6 +12,7 @@ The project also demonstrates the Gibbs phenomenon, convergence as the number of
 - Mouse drawing of a custom one-period signal.
 - Mouse drawing of a normalized 2D closed curve.
 - Fourier coefficient analysis and reconstruction of closed 2D curves.
+- Interactive 2D Fourier epicycle visualization.
 - Uniform sampling and preprocessing.
 - Numerical Fourier Series coefficients `a0`, `an`, and `bn`.
 - Reconstruction with selectable harmonic count `N`.
@@ -97,6 +98,8 @@ The VS Code project environment can be run explicitly with:
 8. Use `Compare with FFT` for the spectrum and timing comparison.
 9. Use `Show Epicycles` for the rotating-vector demonstration.
 10. Use the `File` menu to save, load, or export numerical results.
+
+After `Analyze Curve`, click `2D Epicycle View` to watch the selected symmetric Fourier harmonics rotate and trace the reconstructed curve. Use `Play`, `Pause`, `Reset`, and the 2D harmonic slider to explore the reconstruction.
 
 For a finalized 2D curve, click `Analyze Curve`. The curve is parameterized by normalized cumulative arc length so uneven mouse speed does not change the sampling density. X and Y are analyzed independently as complex Fourier series:
 

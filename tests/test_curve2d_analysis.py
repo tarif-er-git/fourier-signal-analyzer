@@ -95,6 +95,24 @@ def test_reconstruction_harmonic_selection_and_error_metrics() -> None:
     assert error.maximum_error >= 0.0
 
 
+def test_reconstruction_supports_zero_one_and_multiple_harmonics() -> None:
+    result = analyze_curve(circle_points(), num_samples=128, maximum_harmonic=8)
+    original_x_coefficients = result.x_coefficients.copy()
+    original_y_coefficients = result.y_coefficients.copy()
+
+    zero = calculate_curve_error(result, harmonic_count=0)
+    one = calculate_curve_error(result, harmonic_count=1)
+    several = calculate_curve_error(result, harmonic_count=5)
+
+    assert zero.x.shape == (128,)
+    assert one.y.shape == (128,)
+    assert several.x.shape == (128,)
+    assert one.rmse < zero.rmse
+    assert several.rmse <= one.rmse + 1e-12
+    np.testing.assert_array_equal(result.x_coefficients, original_x_coefficients)
+    np.testing.assert_array_equal(result.y_coefficients, original_y_coefficients)
+
+
 def test_invalid_and_degenerate_curves_are_rejected() -> None:
     with pytest.raises(ValueError, match="at least three"):
         analyze_curve([[0.0, 0.0], [1.0, 1.0]])

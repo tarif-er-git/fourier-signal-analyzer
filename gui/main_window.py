@@ -30,6 +30,7 @@ from fourier.synthesis import FourierSynthesizer
 from fourier.spectrum import FourierSpectrum
 from gui.canvas import SignalCanvas
 from gui.controls import ControlPanel
+from gui.curve2d_epicycle_window import Curve2DEpicycleWindow
 from gui.drawing import prepare_custom_signal
 from gui.epicycle_window import EpicycleWindow
 from signal.curve2d import Curve2D
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
         self.drawn_x: np.ndarray | None = None
         self.current_curve: Curve2D | None = None
         self.curve_analysis: CurveFourierResult | None = None
+        self.curve_reconstruction = None
         self.analysis_result: FourierAnalyzer | None = None
         self.reconstructed_signal: np.ndarray | None = None
         self.error: np.ndarray | None = None
@@ -82,6 +84,7 @@ class MainWindow(QMainWindow):
         self.gibbs_result: GibbsResult | None = None
         self.fft_comparison: FourierFFTComparison | None = None
         self.epicycle_window: EpicycleWindow | None = None
+        self.curve2d_epicycle_window: Curve2DEpicycleWindow | None = None
         self.file_actions: dict[str, QAction] = {}
 
         self._build_layout()
@@ -94,6 +97,8 @@ class MainWindow(QMainWindow):
         self.controls.finish_curve_requested.connect(self.finish_curve_drawing)
         self.controls.clear_curve_requested.connect(self.clear_curve)
         self.controls.analyze_curve_requested.connect(self.analyze_2d_curve)
+        self.controls.curve_epicycle_requested.connect(self.show_curve2d_epicycles)
+        self.controls.curve_harmonic_changed.connect(self.update_curve_reconstruction)
         self.canvas.curve_finished.connect(self._curve_candidate_ready)
         self.controls.harmonic_changed.connect(self.reconstruct_if_ready)
         self.controls.fft_comparison_requested.connect(self.compare_with_fft)
@@ -196,9 +201,11 @@ class MainWindow(QMainWindow):
     def generate_signal(self) -> None:
         """Generate and display the selected preset signal."""
         self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
         self.canvas.clear_drawing()
         self.current_curve = None
         self.curve_analysis = None
+        self.curve_reconstruction = None
         time_values = np.linspace(0.0, 1.0, 1001)
         generator = get_preset_signal(self.controls.selected_signal)
         signal_values = generator(time_values, amplitude=1.0, frequency=1.0)
@@ -216,12 +223,19 @@ class MainWindow(QMainWindow):
         self.fft_comparison = None
         self.drawn_t = None
         self.drawn_x = None
+        self.current_curve = None
+        self.curve_analysis = None
+        self.curve_reconstruction = None
         self.controls.reset_metrics()
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(False)
         self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_epicycle_available(False)
+        self.controls.set_curve_reconstruction_available(False)
+        self.controls.set_curve_harmonic_range(0, 0)
+        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -271,12 +285,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", str(error))
             return
         self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
         self.canvas.clear_drawing()
         self._set_active_signal(loaded.time, loaded.signal, "loaded", "Loaded")
         self.drawn_t = None
         self.drawn_x = None
         self.current_curve = None
         self.curve_analysis = None
+        self.curve_reconstruction = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -289,6 +305,10 @@ class MainWindow(QMainWindow):
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(False)
         self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_epicycle_available(False)
+        self.controls.set_curve_reconstruction_available(False)
+        self.controls.set_curve_harmonic_range(0, 0)
+        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -400,6 +420,7 @@ class MainWindow(QMainWindow):
     def start_custom_drawing(self) -> None:
         """Clear stale results and activate the canvas drawing region."""
         self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
         self._clear_active_signal()
         self.analysis_result = None
         self.reconstructed_signal = None
@@ -414,6 +435,11 @@ class MainWindow(QMainWindow):
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(True)
         self.controls.set_curve_active(False)
+        self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_epicycle_available(False)
+        self.controls.set_curve_reconstruction_available(False)
+        self.controls.set_curve_harmonic_range(0, 0)
+        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
         self.controls.set_signal_available(False)
         self.controls.set_current_signal("Drawing custom signal...")
         self.canvas.start_drawing()
@@ -425,9 +451,11 @@ class MainWindow(QMainWindow):
     def start_curve_drawing(self) -> None:
         """Enter 2D curve mode and discard any previous curve."""
         self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
         self._clear_active_signal()
         self.current_curve = None
         self.curve_analysis = None
+        self.curve_reconstruction = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -445,6 +473,9 @@ class MainWindow(QMainWindow):
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.controls.set_curve_analysis_status("2D curve analysis: --")
+        self.controls.set_curve_epicycle_available(False)
+        self.controls.set_curve_harmonic_range(0, 0)
+        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
         self.controls.set_current_signal("Drawing 2D curve...")
         self.canvas.start_curve_drawing()
         self._update_action_state()
@@ -475,6 +506,7 @@ class MainWindow(QMainWindow):
         self.controls.set_curve_active(False)
         self.controls.clear_curve_button.setEnabled(True)
         self.controls.set_curve_analysis_available(True)
+        self.controls.set_curve_reconstruction_available(False)
         self.controls.set_current_signal("2D Curve")
         self._update_action_state()
         self.status_label.setText(
@@ -494,11 +526,15 @@ class MainWindow(QMainWindow):
                 num_samples=512,
                 maximum_harmonic=64,
             )
-            reconstruction = calculate_curve_error(result, harmonic_count=64)
         except ValueError as error:
             QMessageBox.warning(self, "Curve analysis failed", str(error))
             return
         self.curve_analysis = result
+        self.controls.set_curve_harmonic_range(result.maximum_harmonic, 0)
+        self.controls.set_curve_analysis_available(True)
+        self.controls.set_curve_reconstruction_available(True)
+        self.controls.set_curve_epicycle_available(True)
+        self.update_curve_reconstruction(0)
         dc_x = result.x_coefficients[result.harmonics == 0][0].real
         dc_y = result.y_coefficients[result.harmonics == 0][0].real
         self.controls.set_curve_analysis_status(
@@ -506,23 +542,77 @@ class MainWindow(QMainWindow):
             f"Points: {result.point_count}\n"
             f"Harmonics available: {result.maximum_harmonic}\n"
             f"DC X: {dc_x:.6g} | DC Y: {dc_y:.6g}\n"
+            "Adjust 2D Harmonics N to view reconstruction error."
+        )
+        self.status_label.setText("2D curve Fourier analysis complete.")
+
+    def update_curve_reconstruction(self, harmonic_count: int) -> None:
+        """Reconstruct the analyzed curve without recalculating coefficients."""
+        if self.curve_analysis is None:
+            return
+        try:
+            reconstruction = calculate_curve_error(
+                self.curve_analysis, harmonic_count=harmonic_count
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "Reconstruction failed", str(error))
+            return
+        self.curve_reconstruction = reconstruction
+        self.canvas.show_curve_reconstruction(
+            self.curve_analysis.x_samples,
+            self.curve_analysis.y_samples,
+            reconstruction.x,
+            reconstruction.y,
+            reconstruction.harmonic_count,
+            reconstruction.rmse,
+            reconstruction.maximum_error,
+        )
+        self.controls.set_curve_stats(
+            "2D Fourier Reconstruction\n"
+            f"Original Points: {self.curve_analysis.point_count}\n"
+            f"Harmonics Used: {reconstruction.harmonic_count}\n"
+            f"Available Harmonics: {self.curve_analysis.maximum_harmonic}\n"
+            f"MSE: {reconstruction.mse:.6g}\n"
             f"RMSE: {reconstruction.rmse:.6g}\n"
             f"Max Error: {reconstruction.maximum_error:.6g}"
         )
-        self.status_label.setText("2D curve Fourier analysis complete.")
 
     def clear_curve(self) -> None:
         """Clear the current 2D curve while remaining in curve mode."""
         self.current_curve = None
         self.curve_analysis = None
+        self.curve_reconstruction = None
+        self._close_curve2d_epicycle_window()
         self.canvas.start_curve_drawing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(True)
         self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_reconstruction_available(False)
+        self.controls.set_curve_epicycle_available(False)
         self.controls.set_curve_analysis_status("2D curve analysis: --")
+        self.controls.set_curve_harmonic_range(0, 0)
+        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.status_label.setText("2D curve cleared. Draw a new curve.")
+
+    def show_curve2d_epicycles(self) -> None:
+        """Open the 2D epicycle view using the existing analyzed coefficients."""
+        if self.curve_analysis is None:
+            QMessageBox.warning(
+                self,
+                "No 2D analysis",
+                "Analyze a finalized 2D curve before opening epicycles.",
+            )
+            return
+        self._close_curve2d_epicycle_window()
+        self.curve2d_epicycle_window = Curve2DEpicycleWindow(
+            self.curve_analysis,
+            self.controls.curve_harmonic_slider.value(),
+            self,
+        )
+        self.curve2d_epicycle_window.show()
+        self.status_label.setText("2D Fourier epicycle visualization opened.")
 
     def finish_custom_drawing(
         self,
@@ -695,6 +785,12 @@ class MainWindow(QMainWindow):
             self.epicycle_window.close()
             self.epicycle_window = None
 
+    def _close_curve2d_epicycle_window(self) -> None:
+        """Stop and release the 2D epicycle window, if open."""
+        if self.curve2d_epicycle_window is not None:
+            self.curve2d_epicycle_window.close()
+            self.curve2d_epicycle_window = None
+
     def reset(self) -> None:
         """Clear current signal state, metrics, and plots."""
         self._clear_active_signal()
@@ -708,12 +804,15 @@ class MainWindow(QMainWindow):
         self.gibbs_result = None
         self.fft_comparison = None
         self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
         self.controls.reset_metrics()
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(False)
         self.controls.set_curve_analysis_available(False)
+        self.controls.set_curve_reconstruction_available(False)
+        self.controls.set_curve_epicycle_available(False)
         self.controls.set_curve_analysis_status("2D curve analysis: --")
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)

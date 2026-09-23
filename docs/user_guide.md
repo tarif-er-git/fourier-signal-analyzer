@@ -42,6 +42,26 @@ The curve stores the original captured points and a cleaned representation with 
 
 Click `Analyze Curve` after finalizing a curve. The analysis uses normalized cumulative arc length as the periodic parameter, resamples X and Y uniformly, and calculates separate complex Fourier coefficients for both coordinates. The DC coefficients preserve the average X/Y position. Reconstruction includes DC plus symmetric positive and negative harmonics. Reported MSE, RMSE, and maximum error are based on pointwise Euclidean X/Y differences.
 
+## 2D Fourier Reconstruction
+
+1. Draw and finalize a 2D closed curve.
+2. Click `Analyze Curve` to calculate its X/Y coefficients once.
+3. Adjust `2D Harmonics N` to reconstruct the curve with DC plus symmetric harmonics from `-N` through `N`.
+4. Compare the original and dashed reconstructed curves in the equal-aspect overlay.
+5. Observe the MSE, RMSE, and maximum error update for the selected harmonic count.
+
+Increasing the harmonic count generally makes more geometric detail available, although the error need not decrease monotonically for every curve or sampling shape. The coefficient calculation is reused while the harmonic control changes.
+
+## 2D Fourier Epicycle Visualization
+
+After analyzing a 2D curve, click `2D Epicycle View`. Each rotating vector represents one planar Fourier harmonic. For the existing X/Y coefficient convention, the planar coefficient is `C[k] = Cx[k] + j Cy[k]`, and the endpoint is calculated as:
+
+```text
+z(t) = sum_k C[k] exp(j*2*pi*k*t)
+```
+
+The vector radius is `|C[k]|`, its initial orientation is `arg(C[k])`, and its rotation speed is proportional to the signed harmonic index `k`. The chain starts with the DC/average position, and the final endpoint leaves a trace of the reconstructed curve. `Play`, `Pause`, and `Reset` control the animation; changing `Harmonics N` resets the trace and uses the same symmetric `-N ... +N` harmonic set as reconstruction.
+
 ## Spectrum
 
 After reconstruction, the Fourier coefficient spectrum is available through the analysis state and FFT comparison view. Magnitude shows the strength of each harmonic. Phase shows the phase angle in radians.
