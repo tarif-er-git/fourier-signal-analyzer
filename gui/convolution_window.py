@@ -44,6 +44,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSlider,
     QStackedWidget,
     QVBoxLayout,
@@ -132,17 +134,26 @@ class ConvolutionWindow(QMainWindow):
         root.setSpacing(10)
 
         # ==============================================================
-        # --- Left control panel ---
+        # --- Left control panel in Scroll Area ---
         # ==============================================================
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll_area.setFixedWidth(295)
+        self._scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
         ctrl_panel = QWidget()
-        ctrl_panel.setFixedWidth(270)
+        ctrl_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         ctrl_layout = QVBoxLayout(ctrl_panel)
-        ctrl_layout.setContentsMargins(0, 0, 0, 0)
-        ctrl_layout.setSpacing(8)
+        ctrl_layout.setContentsMargins(4, 4, 8, 4)
+        ctrl_layout.setSpacing(10)
 
         # --- Signal Selection Group ---
         signal_group = QGroupBox("Signal Selection")
+        signal_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sg_layout = QVBoxLayout(signal_group)
+        sg_layout.setContentsMargins(8, 12, 8, 10)
         sg_layout.setSpacing(6)
 
         # Signal x(t) section
@@ -168,7 +179,8 @@ class ConvolutionWindow(QMainWindow):
         # x Custom draw buttons
         self._x_draw_box = QWidget()
         x_btn_layout = QHBoxLayout(self._x_draw_box)
-        x_btn_layout.setContentsMargins(0, 0, 0, 0)
+        x_btn_layout.setContentsMargins(0, 2, 0, 2)
+        x_btn_layout.setSpacing(6)
         self._x_draw_btn = QPushButton("✏️ Draw x(t)")
         self._x_draw_btn.clicked.connect(self._on_draw_x)
         self._x_clear_btn = QPushButton("Clear")
@@ -181,7 +193,7 @@ class ConvolutionWindow(QMainWindow):
         # x Status / preview text
         self._x_status_label = QLabel("Preset: Rectangular Pulse")
         self._x_status_label.setWordWrap(True)
-        self._x_status_label.setStyleSheet("font-size: 10px; color: #444;")
+        self._x_status_label.setStyleSheet("font-size: 11px; color: #444; padding-top: 2px;")
         sg_layout.addWidget(self._x_status_label)
 
         # Divider
@@ -213,18 +225,21 @@ class ConvolutionWindow(QMainWindow):
         # h Custom draw buttons
         self._h_draw_box = QWidget()
         h_btn_layout = QHBoxLayout(self._h_draw_box)
-        h_btn_layout.setContentsMargins(0, 0, 0, 0)
+        h_btn_layout.setContentsMargins(0, 2, 0, 2)
+        h_btn_layout.setSpacing(6)
         self._h_draw_btn = QPushButton("✏️ Draw h(t)")
         self._h_draw_btn.clicked.connect(self._on_draw_h)
         self._h_clear_btn = QPushButton("Clear")
         self._h_clear_btn.clicked.connect(self._on_clear_h)
+        h_btn_layout.addWidget(self._h_draw_btn, 1)
+        h_btn_layout.addWidget(self._h_clear_btn)
         self._h_draw_box.setVisible(False)
         sg_layout.addWidget(self._h_draw_box)
 
         # h Status / preview text
         self._h_status_label = QLabel("Preset: Rectangular Pulse")
         self._h_status_label.setWordWrap(True)
-        self._h_status_label.setStyleSheet("font-size: 10px; color: #444;")
+        self._h_status_label.setStyleSheet("font-size: 11px; color: #444; padding-top: 2px;")
         sg_layout.addWidget(self._h_status_label)
 
         ctrl_layout.addWidget(signal_group)
@@ -243,7 +258,10 @@ class ConvolutionWindow(QMainWindow):
 
         # Playback group
         pb_group = QGroupBox("Playback")
+        pb_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         pb_layout = QVBoxLayout(pb_group)
+        pb_layout.setContentsMargins(8, 12, 8, 10)
+        pb_layout.setSpacing(8)
 
         btn_row = QHBoxLayout()
         self._play_button = QPushButton("Play")
@@ -275,7 +293,10 @@ class ConvolutionWindow(QMainWindow):
 
         # Manual shift group
         shift_group = QGroupBox("Manual Shift  t")
+        shift_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         sh_layout = QVBoxLayout(shift_group)
+        sh_layout.setContentsMargins(8, 12, 8, 10)
+        sh_layout.setSpacing(6)
         self._shift_slider = QSlider(Qt.Orientation.Horizontal)
         self._shift_slider.setRange(0, 100)
         self._shift_slider.setValue(0)
@@ -291,7 +312,10 @@ class ConvolutionWindow(QMainWindow):
 
         # Info / status group
         info_group = QGroupBox("Current Frame")
+        info_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         info_layout = QVBoxLayout(info_group)
+        info_layout.setContentsMargins(8, 12, 8, 10)
+        info_layout.setSpacing(6)
         self._frame_label = QLabel("Frame: --")
         self._conv_value_label = QLabel("y(t) = --")
         self._conv_value_label.setWordWrap(True)
@@ -301,7 +325,9 @@ class ConvolutionWindow(QMainWindow):
 
         # Educational note
         note_group = QGroupBox("Convention")
+        note_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         note_layout = QVBoxLayout(note_group)
+        note_layout.setContentsMargins(8, 12, 8, 10)
         note_text = QLabel(
             "x(τ) is fixed.\n\n"
             "h(τ) is reversed → h(−τ)\n"
@@ -317,7 +343,8 @@ class ConvolutionWindow(QMainWindow):
         ctrl_layout.addWidget(note_group)
 
         ctrl_layout.addStretch()
-        root.addWidget(ctrl_panel, 0)
+        self._scroll_area.setWidget(ctrl_panel)
+        root.addWidget(self._scroll_area, 0)
 
         # ==============================================================
         # --- Right: Stacked Views (Simulation vs Drawing) ---

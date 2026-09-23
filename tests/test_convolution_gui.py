@@ -252,3 +252,26 @@ class TestConvolutionWindowGUI:
         assert len(warning_shown) == 2
         assert "Kernel h(t) missing" in warning_shown[1][0]
         win.close()
+
+    def test_sidebar_scroll_area_and_dynamic_resizing(self, qapp) -> None:
+        """Verify the sidebar is wrapped in a QScrollArea that resizes dynamically."""
+        from PySide6.QtWidgets import QScrollArea
+        win = ConvolutionWindow()
+
+        assert hasattr(win, "_scroll_area")
+        assert isinstance(win._scroll_area, QScrollArea)
+        assert win._scroll_area.widgetResizable()
+        assert win._scroll_area.widget() is not None
+
+        # Toggle Custom Draw on both x and h
+        win._x_source_combo.setCurrentIndex(1)
+        win._h_source_combo.setCurrentIndex(1)
+        assert not win._x_draw_box.isHidden()
+        assert not win._h_draw_box.isHidden()
+
+        # Toggle back to preset
+        win._x_source_combo.setCurrentIndex(0)
+        win._h_source_combo.setCurrentIndex(0)
+        assert win._x_draw_box.isHidden()
+        assert win._h_draw_box.isHidden()
+        win.close()
