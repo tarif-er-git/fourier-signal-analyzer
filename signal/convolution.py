@@ -235,8 +235,8 @@ class ConvolutionAnalyzer:
         tau = np.linspace(tau_start, tau_end, num_samples)
         dt = float(tau[1] - tau[0])
 
-        x_resampled = np.interp(tau, t_x, x)
-        h_resampled = np.interp(tau, t_h, h)
+        x_resampled = np.interp(tau, t_x, x, left=0.0, right=0.0)
+        h_resampled = np.interp(tau, t_h, h, left=0.0, right=0.0)
 
         # Reference convolution scaled by dt
         y_ref_raw = np.convolve(x_resampled, h_resampled, mode="full")
@@ -258,6 +258,84 @@ class ConvolutionAnalyzer:
             y_reference=y_reference,
             x_name=x_name,
             h_name=h_name,
+        )
+
+    @classmethod
+    def prepare_signals(
+        cls,
+        x_input: str | tuple[np.ndarray, np.ndarray],
+        h_input: str | tuple[np.ndarray, np.ndarray],
+        num_samples: int = 256,
+        x_name: str | None = None,
+        h_name: str | None = None,
+    ) -> ConvolutionResult:
+        """Prepare convolution from any combination of presets and custom signals.
+
+        Supports all four combinations:
+          1. x(t) = Preset, h(t) = Preset
+          2. x(t) = Custom, h(t) = Preset
+          3. x(t) = Preset, h(t) = Custom
+          4. x(t) = Custom, h(t) = Custom
+
+        Parameters
+        ----------
+        x_input : str or tuple of (t, x)
+            Preset name or (time, values) tuple for signal x.
+        h_input : str or tuple of (t, h)
+            Preset name or (time, values) tuple for signal h.
+        num_samples : int
+            Number of samples on the common tau grid.
+        x_name : str, optional
+            Display label for signal x.
+        h_name : str, optional
+            Display label for signal h.
+
+        Returns
+        -------
+        ConvolutionResult
+        """
+        # Process x input
+        if isinstance(x_input, str):
+            if x_input not in CONVOLUTION_PRESETS:
+                raise ValueError(f"Unknown x preset: {x_input!r}")
+            t_x = np.linspace(-1.0, 1.0, num_samples)
+            label, fn = CONVOLUTION_PRESETS[x_input]
+            vals_x = np.asarray(fn(t_x), dtype=float)
+            final_x_name = x_name or label
+        elif isinstance(x_input, (tuple, list)) and len(x_input) == 2:
+            t_x = np.asarray(x_input[0], dtype=float)
+            vals_x = np.asarray(x_input[1], dtype=float)
+            final_x_name = x_name or "Custom x(t)"
+        else:
+            raise ValueError(
+                f"Invalid x_input: expected preset name or (t, x) tuple, got {type(x_input)}"
+            )
+
+        # Process h input
+        if isinstance(h_input, str):
+            if h_input not in CONVOLUTION_PRESETS:
+                raise ValueError(f"Unknown h preset: {h_input!r}")
+            t_h = np.linspace(-1.0, 1.0, num_samples)
+            label, fn = CONVOLUTION_PRESETS[h_input]
+            vals_h = np.asarray(fn(t_h), dtype=float)
+            final_h_name = h_name or label
+        elif isinstance(h_input, (tuple, list)) and len(h_input) == 2:
+            t_h = np.asarray(h_input[0], dtype=float)
+            vals_h = np.asarray(h_input[1], dtype=float)
+            final_h_name = h_name or "Custom h(t)"
+        else:
+            raise ValueError(
+                f"Invalid h_input: expected preset name or (t, h) tuple, got {type(h_input)}"
+            )
+
+        return cls.prepare_from_arrays(
+            t_x=t_x,
+            x=vals_x,
+            t_h=t_h,
+            h=vals_h,
+            num_samples=num_samples,
+            x_name=final_x_name,
+            h_name=final_h_name,
         )
 
     @classmethod

@@ -144,16 +144,11 @@ class TestImpulseResponse:
         )
         y = result.y_reference
 
-        # y should approximate x_vals on the common tau, shifted by the impulse center
-        # The convolution output has 2*n-1 samples; the center portion should match x
-        half = n // 2
-        y_center = y[half: half + n // 2]
-        x_center = x_vals[n // 4: n // 4 + n // 2]
-        # Shapes may differ slightly; compare where overlap is valid
-        min_len = min(len(y_center), len(x_center))
-        np.testing.assert_allclose(
-            y_center[:min_len], x_center[:min_len], atol=0.05
-        )
+        # y(t) should approximate x(t) around the center where overlap is complete
+        t_eval = np.linspace(-0.5, 0.5, 100)
+        y_eval = np.interp(t_eval, result.output_t, y)
+        x_eval = np.sin(2.0 * np.pi * t_eval)
+        np.testing.assert_allclose(y_eval, x_eval, atol=0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -360,3 +355,107 @@ class TestOverlapProduct:
         result = _prepare_rect_rect(128)
         prod = ConvolutionAnalyzer.overlap_product(result, 10.0)  # far out of range
         assert np.allclose(prod, 0.0, atol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# 11. Flexible Signal Inputs: Presets & Custom Signals (All 4 Combinations)
+# ---------------------------------------------------------------------------
+
+class TestConvolutionFlexibleInputs:
+    """Test all four input combinations for ConvolutionAnalyzer.prepare_signals:
+      Case 1: x=Preset, h=Preset
+      Case 2: x=Custom, h=Preset
+      Case 3: x=Preset, h=Custom
+      Case 4: x=Custom, h=Custom
+    """
+
+    def test_case1_preset_preset(self) -> None:
+        result = ConvolutionAnalyzer.prepare_signals(
+            x_input="Rectangular Pulse",
+            h_input="Triangle Pulse",
+            num_samples=128,
+        )
+        assert isinstance(result, ConvolutionResult)
+        assert result.num_samples == 128
+        assert result.x_name == "Rectangular Pulse"
+        assert result.h_name == "Triangle Pulse"
+        assert len(result.y_reference) == 2 * 128 - 1
+        assert np.all(np.isfinite(result.y_reference))
+
+    def test_case2_custom_preset(self) -> None:
+        t_custom = np.linspace(-1.0, 1.0, 128)
+        x_custom = np.sin(np.pi * t_custom)
+
+        result = ConvolutionAnalyzer.prepare_signals(
+            x_input=(t_custom, x_custom),
+            h_input="Exponential Decay",
+            num_samples=128,
+        )
+        assert isinstance(result, ConvolutionResult)
+        assert result.x_name == "Custom x(t)"
+        assert result.h_name == "Exponential Decay"
+        assert result.num_samples == 128
+        assert np.all(np.isfinite(result.y_reference))
+
+    def test_case3_preset_custom(self) -> None:
+        t_custom = np.linspace(-1.0, 1.0, 128)
+        h_custom = np.where(np.abs(t_custom) <= 0.3, 1.0, 0.0)
+
+        result = ConvolutionAnalyzer.prepare_signals(
+            x_input="Sine Burst",
+            h_input=(t_custom, h_custom),
+            num_samples=128,
+        )
+        assert isinstance(result, ConvolutionResult)
+        assert result.x_name == "Sine Burst"
+        assert result.h_name == "Custom h(t)"
+        assert result.num_samples == 128
+        assert np.all(np.isfinite(result.y_reference))
+
+    def test_case4_custom_custom(self) -> None:
+        t_x = np.linspace(-1.0, 1.0, 128)
+        x_custom = np.exp(-t_x**2)
+        t_h = np.linspace(-1.0, 1.0, 128)
+        h_custom = np.sin(2 * np.pi * t_h)
+
+        result = ConvolutionAnalyzer.prepare_signals(
+            x_input=(t_x, x_custom),
+            h_input=(t_h, h_custom),
+            num_samples=128,
+            x_name="My Custom x",
+            h_name="My Custom h",
+        )
+        assert isinstance(result, ConvolutionResult)
+        assert result.x_name == "My Custom x"
+        assert result.h_name == "My Custom h"
+        assert result.num_samples == 128
+        assert np.all(np.isfinite(result.y_reference))
+
+    def test_signal_independence_state(self) -> None:
+        """Modifying x array after passing it does not alter independent result arrays."""
+        t = np.linspace(-1.0, 1.0, 64)
+        x = np.ones(64)
+        h = np.ones(64) * 0.5
+
+        result = ConvolutionAnalyzer.prepare_signals(
+            x_input=(t, x),
+            h_input=(t, h),
+            num_samples=64,
+        )
+        # Modify original x
+        x[:] = 999.0
+        # Result arrays should remain uncorrupted
+        assert not np.allclose(result.x_resampled, 999.0)
+        assert np.allclose(result.h_resampled, 0.5)
+
+    def test_invalid_input_types_raise(self) -> None:
+        with pytest.raises(ValueError):
+            ConvolutionAnalyzer.prepare_signals(
+                x_input=12345,  # type: ignore
+                h_input="Rectangular Pulse",
+            )
+        with pytest.raises(ValueError):
+            ConvolutionAnalyzer.prepare_signals(
+                x_input="Rectangular Pulse",
+                h_input={"invalid": "dict"},  # type: ignore
+            )

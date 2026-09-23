@@ -25,6 +25,8 @@ The project also demonstrates the Gibbs phenomenon, convergence as the number of
 - Error convergence versus harmonic count.
 - Educational Fourier Series versus NumPy FFT comparison.
 - Interactive epicycle visualization with play, pause, reset, and N control.
+- Interactive 1D Signal Convolution Simulation with step-by-step continuous-time animation.
+- Dual input methods for both convolution inputs x(t) and h(t): presets or custom 1D drawing.
 - JSON signal save/load.
 - CSV reconstruction, spectrum, and error export.
 - JSON analysis report export.
@@ -111,6 +113,50 @@ y(t) = sum_k Cy[k] exp(j*2*pi*k*t)
 ```
 
 The DC coefficients `Cx[0]` and `Cy[0]` preserve the curve's average position. Positive and negative harmonics are stored with their magnitudes and phases. Reconstruction keeps the DC term and includes symmetric harmonics from `-N` through `N`. The reported MSE, RMSE, and maximum error use the Euclidean distance between original and reconstructed X/Y samples.
+
+### Signal Convolution Simulation
+
+Click `Convolution Simulation` in the Advanced Visualization group of the control panel to open the interactive convolution window.
+
+The animation visually illustrates continuous-time convolution:
+
+```text
+y(t) = (x * h)(t) = ∫ x(τ) h(t - τ) dτ
+```
+
+Numerically, this integral is evaluated over a uniform sampling grid with spacing $\Delta\tau$:
+
+```text
+y[k] = ∑ x[n] · h_shifted[n; k] · Δτ
+```
+
+#### Dual Input Options (Presets vs. Custom Draw)
+Users can independently choose the input source for both signals:
+- **Signal x(t):** Choose a preset (Rectangular Pulse, Triangle Pulse, Sine Burst, Sine) or choose **Custom Draw** to draw a custom 1D waveform.
+- **Kernel h(t):** Choose a preset (Rectangular Pulse, Exponential Decay, Triangle Pulse, Sine Burst) or choose **Custom Draw** to draw a custom kernel.
+
+All four combinations are fully supported:
+1. `x(t) = Preset`, `h(t) = Preset`
+2. `x(t) = Custom Draw`, `h(t) = Preset`
+3. `x(t) = Preset`, `h(t) = Custom Draw`
+4. `x(t) = Custom Draw`, `h(t) = Custom Draw`
+
+Example:
+```text
+x(t) → Custom Draw
+h(t) → Preset
+        ↓
+Convolution Simulation
+```
+
+#### Custom 1D Drawing Workflow & Uniform Resampling
+1. Select **Custom Draw** from the Source dropdown for $x(t)$ or $h(t)$.
+2. Click **✏️ Draw x(t)** or **✏️ Draw h(t)** to switch to the dedicated 1D drawing canvas.
+3. Drag with the left mouse button to shape the signal over the time domain $[-1.0, 1.0]$.
+4. Click **Use This Signal**. Raw mouse strokes are filtered for duplicates and converted into a uniformly sampled numerical array ($N=256$, $\Delta\tau = 2/255$).
+5. A confirmation preview is displayed: `Custom ✓ (256 samples, range [-1.0, 1.0])`.
+6. Click **Prepare Convolution** to compute the overlap integral and reference output.
+7. Use **Play**, **Pause**, **Reset**, or manually scrub the **Shift Slider** to observe the reversed and shifted kernel $h(t-\tau)$ passing across $x(\tau)$, with the green shaded overlap region building the output waveform $y(t)$ frame by frame.
 
 ## Testing
 

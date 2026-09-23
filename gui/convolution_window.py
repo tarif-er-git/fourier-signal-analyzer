@@ -7,13 +7,21 @@ This window follows the same pattern as Curve2DEpicycleWindow:
   - A QTimer drives per-frame updates (not matplotlib.animation.FuncAnimation)
   - All mathematical logic is delegated to signal.convolution.ConvolutionAnalyzer
   - All drawing logic is delegated to visualization.convolution_plot
+  - Custom 1D signal drawing is delegated to gui.drawing_canvas.SignalDrawingCanvas
 
-The window is self-contained: users pick x(t) and h(t) from built-in presets
-inside the window, without needing a signal active in the main window.
+The window supports dual input methods for both inputs:
+  1. Signal x(t): Preset selector OR Custom 1D drawing
+  2. Signal h(t): Preset selector OR Custom 1D drawing
+
+All four input combinations are supported with completely independent signal states:
+  - Preset x(t) + Preset h(t)
+  - Custom x(t) + Preset h(t)
+  - Preset x(t) + Custom h(t)
+  - Custom x(t) + Custom h(t)
 
 Animation State Machine
 -----------------------
-IDLE    -> no signals prepared yet
+IDLE    -> no signals prepared yet / waiting for prepare
 READY   -> signals prepared, at frame 0
 PLAYING -> timer running, frames advancing
 PAUSED  -> timer stopped, frame held
@@ -29,6 +37,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -36,13 +45,16 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from gui.drawing_canvas import SignalDrawingCanvas
 from signal.convolution import (
     ConvolutionAnalyzer,
     ConvolutionResult,
+    CONVOLUTION_PRESETS,
     X_PRESET_NAMES,
     H_PRESET_NAMES,
 )
@@ -73,12 +85,8 @@ class ConvolutionWindow(QMainWindow):
       2. h(t−τ) — h reversed then shifted right by t (middle panel)
       3. y(t)   — overlap integral progressively built (bottom panel)
 
-    Controls
-    --------
-    Play / Pause / Reset — animation playback
-    Speed slider — adjusts QTimer interval (slow ↔ fast)
-    Shift slider — manually scrub through frames (updates middle+bottom panels)
-    Prepare Convolution — (re)generates signals and resets to frame 0
+    Both signals x(t) and h(t) can independently be selected from built-in
+    presets or drawn manually using the embedded 1D signal drawing canvas.
     """
 
     FRAME_INTERVAL_MS = _DEFAULT_FRAME_INTERVAL_MS
@@ -86,7 +94,7 @@ class ConvolutionWindow(QMainWindow):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Convolution Simulation")
-        self.resize(1000, 760)
+        self.resize(1040, 780)
 
         # Core state
         self._state: str = _IDLE
@@ -96,6 +104,13 @@ class ConvolutionWindow(QMainWindow):
         self._y_so_far: np.ndarray = np.array([], dtype=float)
         self._handles: dict[str, object] = {}
 
+        # Signal source selection and independent custom signal storage
+        self._x_mode: str = "preset"  # "preset" or "custom"
+        self._h_mode: str = "preset"  # "preset" or "custom"
+        self._custom_x: tuple[np.ndarray, np.ndarray] | None = None
+        self._custom_h: tuple[np.ndarray, np.ndarray] | None = None
+        self._active_drawing_target: str = "x"  # "x" or "h"
+
         # QTimer
         self._timer = QTimer(self)
         self._timer.setInterval(self.FRAME_INTERVAL_MS)
@@ -103,42 +118,122 @@ class ConvolutionWindow(QMainWindow):
 
         self._build_layout()
         self._set_state(_IDLE)
+        self._update_previews()
 
     # ------------------------------------------------------------------
-    # Layout
+    # Layout Construction
     # ------------------------------------------------------------------
 
     def _build_layout(self) -> None:
-        """Construct the window layout: controls on the left, plots on the right."""
+        """Construct the window layout: controls on left, stacked views on right."""
         central = QWidget()
         root = QHBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(10)
 
+        # ==============================================================
         # --- Left control panel ---
+        # ==============================================================
         ctrl_panel = QWidget()
-        ctrl_panel.setFixedWidth(260)
+        ctrl_panel.setFixedWidth(270)
         ctrl_layout = QVBoxLayout(ctrl_panel)
         ctrl_layout.setContentsMargins(0, 0, 0, 0)
+        ctrl_layout.setSpacing(8)
 
-        # Signal selection group
+        # --- Signal Selection Group ---
         signal_group = QGroupBox("Signal Selection")
-        sg_layout = QFormLayout(signal_group)
+        sg_layout = QVBoxLayout(signal_group)
+        sg_layout.setSpacing(6)
 
-        self._x_selector = QComboBox()
+        # Signal x(t) section
+        x_title = QLabel("Signal  x(t)")
+        x_title.setStyleSheet("font-weight: bold; color: #1f77b4;")
+        sg_layout.addWidget(x_title)
+
+        x_src_layout = QHBoxLayout()
+        x_src_layout.addWidget(QLabel("Source:"))
+        self._x_source_combo = QComboBox()
+        self._x_source_combo.addItems(["Preset", "Custom Draw"])
+        self._x_source_combo.currentIndexChanged.connect(self._on_x_source_changed)
+        x_src_layout.addWidget(self._x_source_combo, 1)
+        sg_layout.addLayout(x_src_layout)
+
+        # x Preset selector
+        self._x_preset_combo = QComboBox()
         for name in X_PRESET_NAMES:
-            self._x_selector.addItem(name)
-        sg_layout.addRow("Signal  x(t):", self._x_selector)
+            self._x_preset_combo.addItem(name)
+        self._x_preset_combo.currentIndexChanged.connect(self._on_x_preset_changed)
+        sg_layout.addWidget(self._x_preset_combo)
 
-        self._h_selector = QComboBox()
+        # x Custom draw buttons
+        self._x_draw_box = QWidget()
+        x_btn_layout = QHBoxLayout(self._x_draw_box)
+        x_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._x_draw_btn = QPushButton("✏️ Draw x(t)")
+        self._x_draw_btn.clicked.connect(self._on_draw_x)
+        self._x_clear_btn = QPushButton("Clear")
+        self._x_clear_btn.clicked.connect(self._on_clear_x)
+        x_btn_layout.addWidget(self._x_draw_btn, 1)
+        x_btn_layout.addWidget(self._x_clear_btn)
+        self._x_draw_box.setVisible(False)
+        sg_layout.addWidget(self._x_draw_box)
+
+        # x Status / preview text
+        self._x_status_label = QLabel("Preset: Rectangular Pulse")
+        self._x_status_label.setWordWrap(True)
+        self._x_status_label.setStyleSheet("font-size: 10px; color: #444;")
+        sg_layout.addWidget(self._x_status_label)
+
+        # Divider
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        sg_layout.addWidget(line)
+
+        # Signal h(t) section
+        h_title = QLabel("Kernel  h(t)")
+        h_title.setStyleSheet("font-weight: bold; color: #ff7f0e;")
+        sg_layout.addWidget(h_title)
+
+        h_src_layout = QHBoxLayout()
+        h_src_layout.addWidget(QLabel("Source:"))
+        self._h_source_combo = QComboBox()
+        self._h_source_combo.addItems(["Preset", "Custom Draw"])
+        self._h_source_combo.currentIndexChanged.connect(self._on_h_source_changed)
+        h_src_layout.addWidget(self._h_source_combo, 1)
+        sg_layout.addLayout(h_src_layout)
+
+        # h Preset selector
+        self._h_preset_combo = QComboBox()
         for name in H_PRESET_NAMES:
-            self._h_selector.addItem(name)
-        sg_layout.addRow("Kernel  h(t):", self._h_selector)
+            self._h_preset_combo.addItem(name)
+        self._h_preset_combo.currentIndexChanged.connect(self._on_h_preset_changed)
+        sg_layout.addWidget(self._h_preset_combo)
+
+        # h Custom draw buttons
+        self._h_draw_box = QWidget()
+        h_btn_layout = QHBoxLayout(self._h_draw_box)
+        h_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._h_draw_btn = QPushButton("✏️ Draw h(t)")
+        self._h_draw_btn.clicked.connect(self._on_draw_h)
+        self._h_clear_btn = QPushButton("Clear")
+        self._h_clear_btn.clicked.connect(self._on_clear_h)
+        self._h_draw_box.setVisible(False)
+        sg_layout.addWidget(self._h_draw_box)
+
+        # h Status / preview text
+        self._h_status_label = QLabel("Preset: Rectangular Pulse")
+        self._h_status_label.setWordWrap(True)
+        self._h_status_label.setStyleSheet("font-size: 10px; color: #444;")
+        sg_layout.addWidget(self._h_status_label)
 
         ctrl_layout.addWidget(signal_group)
 
         # Prepare button
         self._prepare_button = QPushButton("Prepare Convolution")
+        self._prepare_button.setStyleSheet(
+            "QPushButton { font-weight: bold; padding: 6px; }"
+        )
         self._prepare_button.setToolTip(
             "Resample both signals onto a common grid\n"
             "and compute the reference convolution."
@@ -224,37 +319,286 @@ class ConvolutionWindow(QMainWindow):
         ctrl_layout.addStretch()
         root.addWidget(ctrl_panel, 0)
 
-        # --- Right: Matplotlib canvas ---
-        canvas_widget = QWidget()
-        canvas_layout = QVBoxLayout(canvas_widget)
-        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        # ==============================================================
+        # --- Right: Stacked Views (Simulation vs Drawing) ---
+        # ==============================================================
+        self._stacked_widget = QStackedWidget()
 
+        # Page 0: Simulation canvas (3 subplots)
+        self._simulation_widget = QWidget()
+        sim_layout = QVBoxLayout(self._simulation_widget)
+        sim_layout.setContentsMargins(0, 0, 0, 0)
         self.figure = Figure(figsize=(8, 8), constrained_layout=False)
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.axes = self.figure.subplots(3, 1, sharex=False)
-        canvas_layout.addWidget(self.canvas)
+        sim_layout.addWidget(self.canvas)
+        self._stacked_widget.addWidget(self._simulation_widget)
 
-        root.addWidget(canvas_widget, 1)
+        # Page 1: Dedicated 1D Signal Drawing View
+        self._drawing_widget = QWidget()
+        draw_layout = QVBoxLayout(self._drawing_widget)
+        draw_layout.setContentsMargins(4, 4, 4, 4)
+        draw_layout.setSpacing(6)
+
+        # Drawing Header Banner
+        header_widget = QWidget()
+        header_layout = QVBoxLayout(header_widget)
+        header_layout.setContentsMargins(8, 8, 8, 8)
+        self._draw_title_label = QLabel("✏️ Drawing Signal x(t)")
+        self._draw_title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+        self._draw_instruction_label = QLabel(
+            "Press and drag the left mouse button across the canvas to shape your 1D signal.\n"
+            "Axes represent Time t in [-1.0, 1.0] and Amplitude in [-1.0, 1.0]. Click 'Use This Signal' when done."
+        )
+        self._draw_instruction_label.setStyleSheet("font-size: 11px; color: #555;")
+        self._draw_instruction_label.setWordWrap(True)
+        header_layout.addWidget(self._draw_title_label)
+        header_layout.addWidget(self._draw_instruction_label)
+        draw_layout.addWidget(header_widget)
+
+        # Canvas widget
+        self._drawing_canvas = SignalDrawingCanvas(
+            self,
+            num_samples=_NUM_SAMPLES,
+            t_range=(-1.0, 1.0),
+            amp_range=(-1.0, 1.0),
+        )
+        draw_layout.addWidget(self._drawing_canvas, 1)
+
+        # Drawing Action Buttons
+        draw_btn_bar = QHBoxLayout()
+        self._use_drawn_btn = QPushButton("✓ Use This Signal")
+        self._use_drawn_btn.setStyleSheet(
+            "QPushButton { font-weight: bold; background-color: #2e7d32; color: white; padding: 6px 14px; }"
+            "QPushButton:hover { background-color: #388e3c; }"
+        )
+        self._use_drawn_btn.clicked.connect(self._on_use_drawn_signal)
+
+        self._clear_canvas_btn = QPushButton("Clear Canvas")
+        self._clear_canvas_btn.clicked.connect(self._drawing_canvas.clear_drawing)
+
+        self._cancel_draw_btn = QPushButton("Cancel / Back to Simulation")
+        self._cancel_draw_btn.clicked.connect(self._on_cancel_drawing)
+
+        draw_btn_bar.addWidget(self._use_drawn_btn)
+        draw_btn_bar.addWidget(self._clear_canvas_btn)
+        draw_btn_bar.addStretch()
+        draw_btn_bar.addWidget(self._cancel_draw_btn)
+        draw_layout.addLayout(draw_btn_bar)
+
+        self._stacked_widget.addWidget(self._drawing_widget)
+
+        root.addWidget(self._stacked_widget, 1)
         self.setCentralWidget(central)
 
-        # Show a placeholder in the plots
-        self._show_placeholder()
+    # ------------------------------------------------------------------
+    # Source Switching and Custom Drawing Handlers
+    # ------------------------------------------------------------------
+
+    def _on_x_source_changed(self, index: int) -> None:
+        """Handle switching between Preset and Custom Draw for Signal x(t)."""
+        is_custom = index == 1
+        self._x_mode = "custom" if is_custom else "preset"
+        self._x_preset_combo.setVisible(not is_custom)
+        self._x_draw_box.setVisible(is_custom)
+
+        self._update_x_status()
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _on_h_source_changed(self, index: int) -> None:
+        """Handle switching between Preset and Custom Draw for Signal h(t)."""
+        is_custom = index == 1
+        self._h_mode = "custom" if is_custom else "preset"
+        self._h_preset_combo.setVisible(not is_custom)
+        self._h_draw_box.setVisible(is_custom)
+
+        self._update_h_status()
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _on_x_preset_changed(self) -> None:
+        """Handle preset selection change for x(t)."""
+        self._update_x_status()
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _on_h_preset_changed(self) -> None:
+        """Handle preset selection change for h(t)."""
+        self._update_h_status()
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _update_x_status(self) -> None:
+        """Update the status label for Signal x(t)."""
+        if self._x_mode == "preset":
+            name = self._x_preset_combo.currentText()
+            self._x_status_label.setText(
+                f"Preset: {name} ✓\nSamples: {_NUM_SAMPLES} | Range: [-1.0, 1.0]"
+            )
+        else:
+            if self._custom_x is not None:
+                t, _ = self._custom_x
+                t_min, t_max = float(t[0]), float(t[-1])
+                self._x_status_label.setText(
+                    f"Signal x(t): Custom ✓\nSamples: {len(t)} | Range: [{t_min:.2g}, {t_max:.2g}]"
+                )
+            else:
+                self._x_status_label.setText("Signal x(t): Not drawn yet\n(Click 'Draw x(t)')")
+
+    def _update_h_status(self) -> None:
+        """Update the status label for Kernel h(t)."""
+        if self._h_mode == "preset":
+            name = self._h_preset_combo.currentText()
+            self._h_status_label.setText(
+                f"Preset: {name} ✓\nSamples: {_NUM_SAMPLES} | Range: [-1.0, 1.0]"
+            )
+        else:
+            if self._custom_h is not None:
+                t, _ = self._custom_h
+                t_min, t_max = float(t[0]), float(t[-1])
+                self._h_status_label.setText(
+                    f"Kernel h(t): Custom ✓\nSamples: {len(t)} | Range: [{t_min:.2g}, {t_max:.2g}]"
+                )
+            else:
+                self._h_status_label.setText("Kernel h(t): Not drawn yet\n(Click 'Draw h(t)')")
+
+    def _on_draw_x(self) -> None:
+        """Activate the drawing canvas for Signal x(t)."""
+        self._active_drawing_target = "x"
+        self._draw_title_label.setText("✏️ Drawing Signal x(t)")
+        self._drawing_canvas.start_drawing(
+            title="Drawing Signal x(t)", initial_signal=self._custom_x
+        )
+        self._stacked_widget.setCurrentIndex(1)
+
+    def _on_draw_h(self) -> None:
+        """Activate the drawing canvas for Signal h(t)."""
+        self._active_drawing_target = "h"
+        self._draw_title_label.setText("✏️ Drawing Kernel h(t)")
+        self._drawing_canvas.start_drawing(
+            title="Drawing Kernel h(t)", initial_signal=self._custom_h
+        )
+        self._stacked_widget.setCurrentIndex(1)
+
+    def _on_use_drawn_signal(self) -> None:
+        """Finalize drawing and save as x(t) or h(t) independently."""
+        try:
+            t, x_vals = self._drawing_canvas.finish_drawing()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Drawing not ready", str(exc))
+            return
+
+        if self._active_drawing_target == "x":
+            self._custom_x = (t.copy(), x_vals.copy())
+            self._update_x_status()
+        else:
+            self._custom_h = (t.copy(), x_vals.copy())
+            self._update_h_status()
+
+        self._stacked_widget.setCurrentIndex(0)
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _on_clear_x(self) -> None:
+        """Clear the custom drawing for x(t) without touching h(t)."""
+        self._custom_x = None
+        self._update_x_status()
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _on_clear_h(self) -> None:
+        """Clear the custom drawing for h(t) without touching x(t)."""
+        self._custom_h = None
+        self._update_h_status()
+        self._reset_simulation_data()
+        self._update_previews()
+
+    def _on_cancel_drawing(self) -> None:
+        """Return to the simulation view without modifying signals."""
+        self._stacked_widget.setCurrentIndex(0)
 
     # ------------------------------------------------------------------
-    # Signal preparation
+    # Signal Preparation and Validation
     # ------------------------------------------------------------------
+
+    def _reset_simulation_data(self) -> None:
+        """Reset active animation state when inputs change."""
+        self._timer.stop()
+        self._result = None
+        self._frame_index = 0
+        self._output_t_so_far = np.array([], dtype=float)
+        self._y_so_far = np.array([], dtype=float)
+        self._handles = {}
+        self._shift_slider.blockSignals(True)
+        self._shift_slider.setValue(0)
+        self._shift_slider.blockSignals(False)
+        self._frame_label.setText("Frame: --")
+        self._conv_value_label.setText("y(t) = --")
+        self._shift_value_label.setText("t = --")
+        self._set_state(_IDLE)
+
+    def _get_active_signals(
+        self,
+    ) -> tuple[str | tuple[np.ndarray, np.ndarray], str | tuple[np.ndarray, np.ndarray], str, str]:
+        """Validate and return the input representations and labels for x and h.
+
+        Raises
+        ------
+        ValueError
+            If either custom signal has not been drawn yet.
+        """
+        # Resolve x
+        if self._x_mode == "preset":
+            x_input = self._x_preset_combo.currentText()
+            x_name = f"x(t): {x_input}"
+        else:
+            if self._custom_x is None:
+                raise ValueError("Signal x(t) is set to Custom Draw, but has not been drawn yet.")
+            x_input = self._custom_x
+            x_name = "x(t) [Custom]"
+
+        # Resolve h
+        if self._h_mode == "preset":
+            h_input = self._h_preset_combo.currentText()
+            h_name = f"h(t): {h_input}"
+        else:
+            if self._custom_h is None:
+                raise ValueError("Kernel h(t) is set to Custom Draw, but has not been drawn yet.")
+            h_input = self._custom_h
+            h_name = "h(t) [Custom]"
+
+        return x_input, h_input, x_name, h_name
 
     def _on_prepare(self) -> None:
-        """Generate signals from selected presets and prepare convolution."""
-        x_name = self._x_selector.currentText()
-        h_name = self._h_selector.currentText()
+        """Resample inputs, compute reference convolution, and prepare animation."""
+        # 1. Validation
+        if self._x_mode == "custom" and self._custom_x is None:
+            QMessageBox.warning(
+                self,
+                "Signal x(t) missing",
+                "Signal x(t) is set to Custom Draw, but has not been drawn yet.\n"
+                "Please click '✏️ Draw x(t)' to draw the signal first.",
+            )
+            return
+
+        if self._h_mode == "custom" and self._custom_h is None:
+            QMessageBox.warning(
+                self,
+                "Kernel h(t) missing",
+                "Kernel h(t) is set to Custom Draw, but has not been drawn yet.\n"
+                "Please click '✏️ Draw h(t)' to draw the kernel first.",
+            )
+            return
+
         try:
-            result = ConvolutionAnalyzer.prepare_from_presets(
-                x_preset_name=x_name,
-                h_preset_name=h_name,
+            x_input, h_input, x_name, h_name = self._get_active_signals()
+            result = ConvolutionAnalyzer.prepare_signals(
+                x_input=x_input,
+                h_input=h_input,
                 num_samples=_NUM_SAMPLES,
-                tau_start=-1.0,
-                tau_end=1.0,
+                x_name=x_name,
+                h_name=h_name,
             )
         except (ValueError, KeyError) as exc:
             QMessageBox.critical(self, "Preparation failed", str(exc))
@@ -287,6 +631,90 @@ class ConvolutionWindow(QMainWindow):
 
         self._set_state(_READY)
         self._draw_frame(0)
+
+    # ------------------------------------------------------------------
+    # Previews & Placeholders
+    # ------------------------------------------------------------------
+
+    def _update_previews(self) -> None:
+        """Render a live preview of the currently selected inputs on axes."""
+        if self._result is not None:
+            return  # Active simulation exists
+
+        tau = np.linspace(-1.0, 1.0, _NUM_SAMPLES)
+        for ax in self.axes:
+            ax.clear()
+            ax.set_visible(True)
+
+        # Top panel: x(τ) preview
+        ax0 = self.axes[0]
+        if self._x_mode == "preset":
+            x_name = self._x_preset_combo.currentText()
+            _, x_fn = CONVOLUTION_PRESETS[x_name]
+            x_vals = x_fn(tau)
+            ax0.plot(tau, x_vals, color="#1f77b4", linewidth=1.8, label=x_name)
+            ax0.set_title(f"Fixed signal   x(τ)  [{x_name}]", fontsize=10, loc="left")
+        else:
+            if self._custom_x is not None:
+                t_x, x_vals = self._custom_x
+                ax0.plot(t_x, x_vals, color="#1f77b4", linewidth=1.8, label="Custom x(t)")
+                ax0.set_title("Fixed signal   x(τ)  [Custom ✓]", fontsize=10, loc="left")
+            else:
+                ax0.text(
+                    0.5, 0.5,
+                    "Signal x(t) not drawn yet.\nClick '✏️ Draw x(t)' to draw.",
+                    ha="center", va="center", transform=ax0.transAxes, color="#888",
+                )
+                ax0.set_title("Fixed signal   x(τ)  [Custom - Not Drawn]", fontsize=10, loc="left")
+
+        # Middle panel: h(τ) preview
+        ax1 = self.axes[1]
+        if self._h_mode == "preset":
+            h_name = self._h_preset_combo.currentText()
+            _, h_fn = CONVOLUTION_PRESETS[h_name]
+            h_vals = h_fn(tau)
+            ax1.plot(tau, h_vals, color="#ff7f0e", linewidth=1.8, label=h_name)
+            ax1.set_title(
+                f"Kernel   h(τ)  [{h_name}]  (will be reversed & shifted during simulation)",
+                fontsize=10,
+                loc="left",
+            )
+        else:
+            if self._custom_h is not None:
+                t_h, h_vals = self._custom_h
+                ax1.plot(t_h, h_vals, color="#ff7f0e", linewidth=1.8, label="Custom h(t)")
+                ax1.set_title(
+                    "Kernel   h(τ)  [Custom ✓]  (will be reversed & shifted)",
+                    fontsize=10,
+                    loc="left",
+                )
+            else:
+                ax1.text(
+                    0.5, 0.5,
+                    "Kernel h(t) not drawn yet.\nClick '✏️ Draw h(t)' to draw.",
+                    ha="center", va="center", transform=ax1.transAxes, color="#888",
+                )
+                ax1.set_title("Kernel   h(τ)  [Custom - Not Drawn]", fontsize=10, loc="left")
+
+        # Bottom panel: convolution output placeholder
+        ax2 = self.axes[2]
+        ax2.set_title("Convolution output   y(t) = x(t) ∗ h(t)", fontsize=10, loc="left")
+        ax2.text(
+            0.5, 0.5,
+            "Click 'Prepare Convolution' to compute overlap and start animation.",
+            ha="center", va="center", transform=ax2.transAxes, color="#666",
+        )
+
+        for ax in self.axes:
+            ax.set_ylabel("Amplitude")
+            ax.grid(True, alpha=0.25)
+            ax.axhline(0.0, color="0.7", linewidth=0.8)
+            ax.set_xlim(-1.1, 1.1)
+            ax.set_ylim(-1.1, 1.1)
+
+        self.axes[2].set_xlabel("t")
+        self.figure.tight_layout(h_pad=1.2)
+        self.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     # Playback controls
@@ -329,7 +757,6 @@ class ConvolutionWindow(QMainWindow):
     def _on_speed_changed(self, value: int) -> None:
         """Adjust QTimer interval based on speed slider."""
         self._speed_label.setText(str(value))
-        # Interval: speed 1 → 120 ms (slow), speed 10 → 12 ms (fast)
         interval = max(12, 132 - value * 12)
         self._timer.setInterval(interval)
 
@@ -341,7 +768,6 @@ class ConvolutionWindow(QMainWindow):
             self._timer.stop()
             self._set_state(_PAUSED)
         frame = int(np.clip(slider_value, 0, self._result.num_frames - 1))
-        # Rebuild output buffer up to this frame
         self._frame_index = frame
         if frame == 0:
             self._output_t_so_far = np.array([], dtype=float)
@@ -443,31 +869,6 @@ class ConvolutionWindow(QMainWindow):
         self._pause_button.setEnabled(state == _PLAYING)
         self._reset_button.setEnabled(state in (_READY, _PLAYING, _PAUSED, _DONE))
         self._shift_slider.setEnabled(state in (_READY, _PAUSED, _DONE))
-
-    # ------------------------------------------------------------------
-    # Placeholder
-    # ------------------------------------------------------------------
-
-    def _show_placeholder(self) -> None:
-        """Show instructional placeholder text before signals are prepared."""
-        for ax in self.axes:
-            ax.clear()
-            ax.set_visible(True)
-        self.figure.set_constrained_layout(False)
-        titles = [
-            "Fixed signal   x(τ)  — select a preset and click Prepare",
-            "Reversed & shifted kernel   h(t−τ)",
-            "Convolution output   y(t) = x(t) ∗ h(t)",
-        ]
-        ylabels = ["Amplitude", "Amplitude", "y(t)"]
-        for ax, title, ylabel in zip(self.axes, titles, ylabels):
-            ax.set_title(title, fontsize=10, loc="left")
-            ax.set_ylabel(ylabel)
-            ax.grid(True, alpha=0.25)
-            ax.axhline(0.0, color="0.7", linewidth=0.8)
-        self.axes[2].set_xlabel("t")
-        self.figure.tight_layout(h_pad=1.2)
-        self.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     # Cleanup
