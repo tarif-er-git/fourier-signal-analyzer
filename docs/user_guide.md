@@ -31,6 +31,15 @@ Changing the slider after reconstruction updates the reconstruction and metrics 
 
 The left and right edges represent the same periodic boundary. The two endpoint values are averaged before analysis so the custom signal does not gain an arbitrary boundary jump.
 
+## 2D Closed Curve
+
+1. Click `Draw 2D Curve`.
+2. Hold the left mouse button and draw an arbitrary curve in the equal-aspect plot.
+3. Release the mouse to preview the candidate as a closed curve.
+4. Click `Finish / Close Curve` to finalize it, or `Clear Curve` to start again.
+
+The curve stores the original captured points and a cleaned representation with invalid and consecutive duplicate points removed. Its bounding box and centered normalized coordinates are also retained. The first point is connected to the last point for display without duplicating the first vertex in the stored curve. Fourier analysis of 2D curves is reserved for a later feature.
+
 ## Spectrum
 
 After reconstruction, the Fourier coefficient spectrum is available through the analysis state and FFT comparison view. Magnitude shows the strength of each harmonic. Phase shows the phase angle in radians.

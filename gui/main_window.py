@@ -27,6 +27,7 @@ from gui.canvas import SignalCanvas
 from gui.controls import ControlPanel
 from gui.drawing import prepare_custom_signal
 from gui.epicycle_window import EpicycleWindow
+from signal.curve2d import Curve2D
 from metrics.convergence import ConvergenceResult, analyze_convergence
 from metrics.error import (
     calculate_mae,
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         self.active_signal_type: str | None = None
         self.drawn_t: np.ndarray | None = None
         self.drawn_x: np.ndarray | None = None
+        self.current_curve: Curve2D | None = None
         self.analysis_result: FourierAnalyzer | None = None
         self.reconstructed_signal: np.ndarray | None = None
         self.error: np.ndarray | None = None
@@ -82,6 +84,10 @@ class MainWindow(QMainWindow):
         self.controls.reset_requested.connect(self.reset)
         self.controls.draw_custom_requested.connect(self.start_custom_drawing)
         self.controls.finish_drawing_requested.connect(self.finish_custom_drawing)
+        self.controls.draw_curve_requested.connect(self.start_curve_drawing)
+        self.controls.finish_curve_requested.connect(self.finish_curve_drawing)
+        self.controls.clear_curve_requested.connect(self.clear_curve)
+        self.canvas.curve_finished.connect(self._curve_candidate_ready)
         self.controls.harmonic_changed.connect(self.reconstruct_if_ready)
         self.controls.fft_comparison_requested.connect(self.compare_with_fft)
         self.controls.epicycle_requested.connect(self.show_epicycles)
@@ -184,6 +190,7 @@ class MainWindow(QMainWindow):
         """Generate and display the selected preset signal."""
         self._close_epicycle_window()
         self.canvas.clear_drawing()
+        self.current_curve = None
         time_values = np.linspace(0.0, 1.0, 1001)
         generator = get_preset_signal(self.controls.selected_signal)
         signal_values = generator(time_values, amplitude=1.0, frequency=1.0)
@@ -205,6 +212,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
+        self.controls.set_curve_active(False)
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -254,9 +262,11 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", str(error))
             return
         self._close_epicycle_window()
+        self.canvas.clear_drawing()
         self._set_active_signal(loaded.time, loaded.signal, "loaded", "Loaded")
         self.drawn_t = None
         self.drawn_x = None
+        self.current_curve = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -267,6 +277,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
+        self.controls.set_curve_active(False)
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -391,6 +402,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(True)
+        self.controls.set_curve_active(False)
         self.controls.set_signal_available(False)
         self.controls.set_current_signal("Drawing custom signal...")
         self.canvas.start_drawing()
@@ -398,6 +410,72 @@ class MainWindow(QMainWindow):
         self.status_label.setText(
             "Drag the line as many times as needed, then click Finish Drawing."
         )
+
+    def start_curve_drawing(self) -> None:
+        """Enter 2D curve mode and discard any previous curve."""
+        self._close_epicycle_window()
+        self._clear_active_signal()
+        self.current_curve = None
+        self.analysis_result = None
+        self.reconstructed_signal = None
+        self.error = None
+        self.convergence_result = None
+        self.gibbs_result = None
+        self.fft_comparison = None
+        self.drawn_t = None
+        self.drawn_x = None
+        self.controls.reset_metrics()
+        self.controls.reset_gibbs()
+        self.controls.reset_fft_timing()
+        self.controls.set_drawing_active(False)
+        self.controls.set_curve_active(False)
+        self.controls.set_curve_active(True)
+        self.controls.set_signal_available(False)
+        self.controls.set_reconstruction_available(False)
+        self.controls.set_current_signal("Drawing 2D curve...")
+        self.canvas.start_curve_drawing()
+        self._update_action_state()
+        self.status_label.setText(
+            "Draw a closed curve, release, then click Finish / Close Curve."
+        )
+
+    def _curve_candidate_ready(self, curve: Curve2D) -> None:
+        """Store and display a released curve without running analysis."""
+        self.current_curve = curve
+        if curve.is_valid:
+            self.status_label.setText(
+                f"Curve captured with {curve.point_count} points. Click Finish / Close Curve."
+            )
+        else:
+            self.status_label.setText(
+                "Curve needs at least three distinct points. Draw again or clear it."
+            )
+
+    def finish_curve_drawing(self) -> None:
+        """Validate and finalize the current 2D curve."""
+        try:
+            curve = self.canvas.finish_curve_drawing()
+        except ValueError as error:
+            QMessageBox.warning(self, "Curve not ready", str(error))
+            return
+        self.current_curve = curve
+        self.controls.set_curve_active(False)
+        self.controls.clear_curve_button.setEnabled(True)
+        self.controls.set_current_signal("2D Curve")
+        self._update_action_state()
+        self.status_label.setText(
+            f"Closed 2D curve ready: {curve.point_count} points. 2D Fourier analysis is not implemented yet."
+        )
+
+    def clear_curve(self) -> None:
+        """Clear the current 2D curve while remaining in curve mode."""
+        self.current_curve = None
+        self.canvas.start_curve_drawing()
+        self.controls.set_drawing_active(False)
+        self.controls.set_curve_active(True)
+        self.controls.set_signal_available(False)
+        self.controls.set_reconstruction_available(False)
+        self.status_label.setText("2D curve cleared. Draw a new curve.")
 
     def finish_custom_drawing(
         self,
@@ -575,6 +653,7 @@ class MainWindow(QMainWindow):
         self._clear_active_signal()
         self.drawn_t = None
         self.drawn_x = None
+        self.current_curve = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -586,6 +665,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
+        self.controls.set_curve_active(False)
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.controls.set_current_signal("None")

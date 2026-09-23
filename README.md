@@ -10,6 +10,7 @@ The project also demonstrates the Gibbs phenomenon, convergence as the number of
 
 - Sine, square, triangle, and sawtooth presets.
 - Mouse drawing of a custom one-period signal.
+- Mouse drawing of a normalized 2D closed curve.
 - Uniform sampling and preprocessing.
 - Numerical Fourier Series coefficients `a0`, `an`, and `bn`.
 - Reconstruction with selectable harmonic count `N`.
@@ -87,12 +88,16 @@ The VS Code project environment can be run explicitly with:
 
 1. Select a preset and click `Generate`, or choose `Draw Custom Signal`.
 2. For a custom signal, draw while holding the left mouse button and click `Finish Drawing`.
-3. Set the harmonic count `N` with the slider.
-4. Click `Reconstruct` or move the slider after reconstruction for a live update.
-5. Inspect the original signal, reconstruction, error, metrics, Gibbs result, and error-versus-N graph.
-6. Use `Compare with FFT` for the spectrum and timing comparison.
-7. Use `Show Epicycles` for the rotating-vector demonstration.
-8. Use the `File` menu to save, load, or export numerical results.
+3. To draw a 2D curve, choose `Draw 2D Curve`, drag with the left mouse button, and release. The stroke is shown as a candidate closed curve; use `Finish / Close Curve` to finalize it or `Clear Curve` to start again.
+4. The curve keeps its captured points, removes consecutive duplicates and invalid points from its processed representation, and stores centered normalized coordinates for later mathematical processing.
+5. Set the harmonic count `N` with the slider.
+6. Click `Reconstruct` or move the slider after reconstruction for a live update.
+7. Inspect the original signal, reconstruction, error, metrics, Gibbs result, and error-versus-N graph.
+8. Use `Compare with FFT` for the spectrum and timing comparison.
+9. Use `Show Epicycles` for the rotating-vector demonstration.
+10. Use the `File` menu to save, load, or export numerical results.
+
+2D Fourier analysis is intentionally not implemented yet; this mode currently captures, cleans, closes, and normalizes the curve for a future processing step.
 
 ## Testing
 
@@ -119,6 +124,7 @@ The suite covers signal generation, sampling, Fourier analysis and synthesis, sp
 ```text
 main.py                 Application entry point
 signal/                 Signal generation, sampling, preprocessing
+						 and 2D curve data modeling
 presets/                Named preset waveforms
 fourier/                Fourier analysis, synthesis, spectrum, FFT comparison
 metrics/                Error metrics, Gibbs, convergence

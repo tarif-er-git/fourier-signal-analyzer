@@ -23,6 +23,9 @@ class ControlPanel(QWidget):
     reset_requested = Signal()
     draw_custom_requested = Signal()
     finish_drawing_requested = Signal()
+    draw_curve_requested = Signal()
+    finish_curve_requested = Signal()
+    clear_curve_requested = Signal()
     harmonic_changed = Signal(int)
     fft_comparison_requested = Signal()
     epicycle_requested = Signal()
@@ -39,6 +42,9 @@ class ControlPanel(QWidget):
         self.clear_button = QPushButton("Clear / Reset")
         self.draw_button = QPushButton("Draw Custom Signal")
         self.finish_drawing_button = QPushButton("Finish Drawing")
+        self.draw_curve_button = QPushButton("Draw 2D Curve")
+        self.finish_curve_button = QPushButton("Finish / Close Curve")
+        self.clear_curve_button = QPushButton("Clear Curve")
         self.reconstruct_button = QPushButton("Reconstruct")
         self.compare_fft_button = QPushButton("Compare with FFT")
         self.epicycle_button = QPushButton("Show Epicycles")
@@ -72,9 +78,13 @@ class ControlPanel(QWidget):
         self.clear_button.clicked.connect(self.reset_requested)
         self.draw_button.clicked.connect(self.draw_custom_requested)
         self.finish_drawing_button.clicked.connect(self.finish_drawing_requested)
+        self.draw_curve_button.clicked.connect(self.draw_curve_requested)
+        self.finish_curve_button.clicked.connect(self.finish_curve_requested)
+        self.clear_curve_button.clicked.connect(self.clear_curve_requested)
         self.compare_fft_button.clicked.connect(self.fft_comparison_requested)
         self.epicycle_button.clicked.connect(self.epicycle_requested)
         self.set_drawing_active(False)
+        self.set_curve_active(False)
         self.set_signal_available(False)
         self.set_reconstruction_available(False)
 
@@ -144,6 +154,16 @@ class ControlPanel(QWidget):
         self.generate_button.setEnabled(not active)
         self.reconstruct_button.setEnabled(not active)
 
+    def set_curve_active(self, active: bool) -> None:
+        """Enable only the controls relevant while collecting a 2D curve."""
+        self.draw_curve_button.setEnabled(not active)
+        self.finish_curve_button.setEnabled(active)
+        self.clear_curve_button.setEnabled(active)
+        self.generate_button.setEnabled(not active)
+        self.draw_button.setEnabled(not active)
+        self.finish_drawing_button.setEnabled(False if active else self.finish_drawing_button.isEnabled())
+        self.reconstruct_button.setEnabled(not active)
+
     def set_signal_available(self, available: bool) -> None:
         """Enable actions that require a current signal."""
         self.clear_button.setEnabled(available)
@@ -185,6 +205,11 @@ class ControlPanel(QWidget):
         drawing_row.addWidget(self.draw_button)
         drawing_row.addWidget(self.finish_drawing_button)
         signal_layout.addLayout(drawing_row)
+        curve_row = QHBoxLayout()
+        curve_row.addWidget(self.draw_curve_button)
+        curve_row.addWidget(self.finish_curve_button)
+        curve_row.addWidget(self.clear_curve_button)
+        signal_layout.addLayout(curve_row)
         layout.addWidget(signal_group)
 
         analysis_group = QGroupBox("Fourier Analysis")

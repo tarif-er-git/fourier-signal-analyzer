@@ -6,9 +6,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from gui.main_window import MainWindow
+from signal.curve2d import Curve2D
 
 
 @pytest.fixture(scope="module")
@@ -16,6 +19,17 @@ def application():
     instance = QApplication.instance() or QApplication([])
     yield instance
     instance.quit()
+
+
+def _mouse_event(x: float, y: float) -> QMouseEvent:
+    """Create a left-button event at a canvas-local widget position."""
+    return QMouseEvent(
+        QMouseEvent.Type.MouseMove,
+        QPointF(x, y),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
 
 
 def test_generate_sine_and_reconstruct_with_one_harmonic(application) -> None:
@@ -81,6 +95,52 @@ def test_custom_drawing_accumulates_multiple_strokes(application) -> None:
     assert np.max(first_stroke) == pytest.approx(1.0)
     assert np.min(second_stroke) == pytest.approx(-1.0)
     assert second_stroke[200] == pytest.approx(first_stroke[200])
+    window.close()
+
+
+def test_2d_curve_mode_finalizes_and_clears_curve(application) -> None:
+    window = MainWindow()
+
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+
+    assert window.current_curve is candidate
+    assert candidate.is_valid
+    assert window.controls.finish_curve_button.isEnabled() is False
+
+    window.clear_curve()
+
+    assert window.current_curve is None
+    assert window.controls.finish_curve_button.isEnabled() is True
+    window.close()
+
+
+def test_2d_mouse_coordinates_follow_rendered_axis_bounds(application) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    canvas = window.canvas
+    canvas.draw()
+    axis = canvas.axes[0]
+
+    left_bottom = axis.transData.transform((-1.0, -1.0))
+    widget_point = (
+        left_bottom[0] / canvas.devicePixelRatioF(),
+        (canvas.figure.bbox.height - left_bottom[1]) / canvas.devicePixelRatioF(),
+    )
+    assert canvas._event_to_curve_point(
+        _mouse_event(widget_point[0], widget_point[1])
+    ) == pytest.approx((-1.0, -1.0))
+
+    outside = axis.bbox.x1 + 20.0
+    outside_widget_x = outside / canvas.devicePixelRatioF()
+    assert canvas._event_to_curve_point(
+        _mouse_event(outside_widget_x, widget_point[1])
+    ) is None
     window.close()
 
 
