@@ -20,6 +20,11 @@ from fourier.curve2d_analysis import (
     analyze_curve,
     calculate_curve_error,
 )
+from fourier.curve2d_error import (
+    CurveConvergenceResult,
+    CurveErrorMetrics,
+    analyze_curve_convergence,
+)
 from fourier.fft_comparison import (
     FourierFFTComparison,
     compare_fourier_and_fft,
@@ -31,6 +36,8 @@ from fourier.spectrum import FourierSpectrum
 from gui.canvas import SignalCanvas
 from gui.controls import ControlPanel
 from gui.curve2d_epicycle_window import Curve2DEpicycleWindow
+from gui.curve2d_spectrum_window import Curve2DSpectrumWindow
+from gui.curve2d_error_window import Curve2DErrorWindow
 from gui.drawing import prepare_custom_signal
 from gui.epicycle_window import EpicycleWindow
 from signal.curve2d import Curve2D
@@ -44,11 +51,16 @@ from metrics.error import (
 from metrics.gibbs import GibbsResult, analyze_gibbs, theoretical_gibbs_overshoot
 from presets.signals import get_preset_signal
 from signal_io import (
+    export_curve_coefficients,
+    export_curve_csv,
+    export_curve_reconstruction,
     export_analysis_report,
     export_error,
     export_reconstruction,
     export_spectrum,
     load_signal,
+    load_curve,
+    save_curve,
     save_signal,
 )
 
@@ -77,7 +89,9 @@ class MainWindow(QMainWindow):
         self.current_curve: Curve2D | None = None
         self.curve_analysis: CurveFourierResult | None = None
         self.curve_reconstruction = None
+        self.curve_convergence: CurveConvergenceResult | None = None
         self.analysis_result: FourierAnalyzer | None = None
+        self.synthesizer: FourierSynthesizer | None = None
         self.reconstructed_signal: np.ndarray | None = None
         self.error: np.ndarray | None = None
         self.convergence_result: ConvergenceResult | None = None
@@ -85,6 +99,8 @@ class MainWindow(QMainWindow):
         self.fft_comparison: FourierFFTComparison | None = None
         self.epicycle_window: EpicycleWindow | None = None
         self.curve2d_epicycle_window: Curve2DEpicycleWindow | None = None
+        self.curve2d_spectrum_window: Curve2DSpectrumWindow | None = None
+        self.curve2d_error_window: Curve2DErrorWindow | None = None
         self.file_actions: dict[str, QAction] = {}
 
         self._build_layout()
@@ -98,6 +114,8 @@ class MainWindow(QMainWindow):
         self.controls.clear_curve_requested.connect(self.clear_curve)
         self.controls.analyze_curve_requested.connect(self.analyze_2d_curve)
         self.controls.curve_epicycle_requested.connect(self.show_curve2d_epicycles)
+        self.controls.curve_spectrum_requested.connect(self.show_curve2d_spectrum)
+        self.controls.curve_error_requested.connect(self.show_curve2d_error)
         self.controls.curve_harmonic_changed.connect(self.update_curve_reconstruction)
         self.canvas.curve_finished.connect(self._curve_candidate_ready)
         self.controls.harmonic_changed.connect(self.reconstruct_if_ready)
@@ -131,8 +149,24 @@ class MainWindow(QMainWindow):
         file_menu = self.menuBar().addMenu("File")
         self.file_actions["load"] = file_menu.addAction("Load Signal", self.load_signal_file)
         self.file_actions["save"] = file_menu.addAction("Save Signal", self.save_signal_file)
+        self.file_actions["save_curve"] = file_menu.addAction(
+            "Save 2D Curve", self.save_curve_file
+        )
+        self.file_actions["load_curve"] = file_menu.addAction(
+            "Load 2D Curve", self.load_curve_file
+        )
         self.file_actions["load"].setShortcut(QKeySequence.StandardKey.Open)
         self.file_actions["save"].setShortcut(QKeySequence.StandardKey.Save)
+        file_menu.addSeparator()
+        self.file_actions["curve_csv"] = file_menu.addAction(
+            "Export 2D Curve CSV", self.export_curve_csv_file
+        )
+        self.file_actions["curve_reconstruction"] = file_menu.addAction(
+            "Export 2D Reconstruction CSV", self.export_curve_reconstruction_file
+        )
+        self.file_actions["curve_coefficients"] = file_menu.addAction(
+            "Export 2D Fourier Coefficients", self.export_curve_coefficients_file
+        )
         file_menu.addSeparator()
         self.file_actions["reconstruction"] = file_menu.addAction(
             "Export Reconstruction", self.export_reconstruction_file
@@ -157,11 +191,17 @@ class MainWindow(QMainWindow):
         """Enable file actions according to the current application state."""
         has_signal = self.t is not None and self.original_signal is not None
         has_reconstruction = self.reconstructed_signal is not None
+        has_curve = self.current_curve is not None and self.current_curve.is_valid
+        has_curve_analysis = self.curve_analysis is not None and self.curve_reconstruction is not None
         self.file_actions["save"].setEnabled(has_signal)
         self.file_actions["reconstruction"].setEnabled(has_reconstruction)
         self.file_actions["spectrum"].setEnabled(self.analysis_result is not None)
         self.file_actions["error"].setEnabled(self.error is not None)
         self.file_actions["report"].setEnabled(has_signal)
+        self.file_actions["save_curve"].setEnabled(has_curve)
+        self.file_actions["curve_csv"].setEnabled(has_curve)
+        self.file_actions["curve_reconstruction"].setEnabled(has_curve_analysis)
+        self.file_actions["curve_coefficients"].setEnabled(self.curve_analysis is not None)
 
     def show_about(self) -> None:
         """Show a concise educational project description."""
@@ -188,6 +228,9 @@ class MainWindow(QMainWindow):
         self.active_signal_data = (time_values, signal_values)
         self.current_signal_data = self.active_signal_data
         self.active_signal_type = signal_type
+        self.analysis_result = None
+        self.synthesizer = None
+        self.convergence_result = None
         self.controls.set_current_signal(display_name)
 
     def _clear_active_signal(self) -> None:
@@ -197,15 +240,21 @@ class MainWindow(QMainWindow):
         self.active_signal_data = None
         self.current_signal_data = None
         self.active_signal_type = None
+        self.analysis_result = None
+        self.synthesizer = None
+        self.convergence_result = None
 
     def generate_signal(self) -> None:
         """Generate and display the selected preset signal."""
         self._close_epicycle_window()
         self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
         self.canvas.clear_drawing()
         self.current_curve = None
         self.curve_analysis = None
         self.curve_reconstruction = None
+        self.curve_convergence = None
         time_values = np.linspace(0.0, 1.0, 1001)
         generator = get_preset_signal(self.controls.selected_signal)
         signal_values = generator(time_values, amplitude=1.0, frequency=1.0)
@@ -230,12 +279,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
-        self.controls.set_curve_active(False)
-        self.controls.set_curve_analysis_available(False)
-        self.controls.set_curve_epicycle_available(False)
-        self.controls.set_curve_reconstruction_available(False)
-        self.controls.set_curve_harmonic_range(0, 0)
-        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
+        self.controls.reset_curve_controls()
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -272,6 +316,116 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Saved signal to {path}")
         QMessageBox.information(self, "Signal saved", "The signal was saved successfully.")
 
+    def save_curve_file(self) -> None:
+        """Save the current closed 2D curve as versioned JSON."""
+        if self.current_curve is None or not self.current_curve.is_valid:
+            QMessageBox.warning(self, "No 2D curve", "Draw and finish a valid 2D curve first.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save 2D Curve", "curve2d.json", "2D Curve JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            save_curve(path, self.current_curve, {"application": "Signal Sketch and Decompose"})
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "2D curve save failed", str(error))
+            return
+        self.status_label.setText(f"Saved 2D curve to {path}")
+
+    def load_curve_file(self) -> None:
+        """Load a 2D curve and require fresh Fourier analysis."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load 2D Curve", "", "2D Curve JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            loaded = load_curve(path)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "2D curve load failed", str(error))
+            return
+        self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
+        self._clear_active_signal()
+        self.current_curve = loaded.curve
+        self.curve_analysis = None
+        self.curve_reconstruction = None
+        self.analysis_result = None
+        self.reconstructed_signal = None
+        self.error = None
+        self.convergence_result = None
+        self.gibbs_result = None
+        self.fft_comparison = None
+        self.controls.set_drawing_active(False)
+        self.controls.set_curve_active(False)
+        self.controls.set_curve_analysis_available(True)
+        self.controls.set_curve_reconstruction_available(False)
+        self.controls.set_curve_epicycle_available(False)
+        self.controls.set_curve_error_available(False)
+        self.controls.set_curve_harmonic_range(0, 0)
+        self.controls.set_curve_analysis_status("2D curve loaded. Analyze it before reconstruction.")
+        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
+        self.controls.set_signal_available(False)
+        self.controls.set_reconstruction_available(False)
+        self.controls.set_current_signal("Loaded 2D Curve")
+        self.canvas.show_curve(loaded.curve)
+        self._update_action_state()
+        self.status_label.setText(f"Loaded 2D curve from {path}. Analyze it to continue.")
+
+    def export_curve_csv_file(self) -> None:
+        """Export cleaned 2D curve vertices as CSV."""
+        if self.current_curve is None or not self.current_curve.is_valid:
+            QMessageBox.warning(self, "No 2D curve", "Draw or load a valid 2D curve first.")
+            return
+        path = self._choose_export_path("Export 2D Curve", "curve2d.csv")
+        if not path:
+            return
+        try:
+            export_curve_csv(path, self.current_curve)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "2D curve export failed", str(error))
+            return
+        self.status_label.setText(f"Exported 2D curve to {path}")
+
+    def export_curve_reconstruction_file(self) -> None:
+        """Export the currently selected-harmonic 2D reconstruction."""
+        if self.curve_analysis is None or self.curve_reconstruction is None:
+            QMessageBox.warning(self, "No 2D reconstruction", "Analyze a 2D curve first.")
+            return
+        path = self._choose_export_path(
+            "Export 2D Reconstruction", "curve2d_reconstruction.csv"
+        )
+        if not path:
+            return
+        try:
+            export_curve_reconstruction(path, self.curve_analysis, self.curve_reconstruction)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "2D reconstruction export failed", str(error))
+            return
+        self.status_label.setText(
+            f"Exported 2D reconstruction with N={self.curve_reconstruction.harmonic_count}."
+        )
+
+    def export_curve_coefficients_file(self) -> None:
+        """Export the analyzed X/Y Fourier coefficients as CSV."""
+        if self.curve_analysis is None:
+            QMessageBox.warning(self, "No 2D analysis", "Analyze a 2D curve first.")
+            return
+        path = self._choose_export_path(
+            "Export 2D Fourier Coefficients", "curve2d_coefficients.csv"
+        )
+        if not path:
+            return
+        try:
+            export_curve_coefficients(path, self.curve_analysis)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "Coefficient export failed", str(error))
+            return
+        self.status_label.setText(f"Exported {self.curve_analysis.point_count} 2D Fourier coefficients.")
+
     def load_signal_file(self) -> None:
         """Load a JSON signal, clear derived state, and display it."""
         path, _ = QFileDialog.getOpenFileName(
@@ -303,12 +457,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
-        self.controls.set_curve_active(False)
-        self.controls.set_curve_analysis_available(False)
-        self.controls.set_curve_epicycle_available(False)
-        self.controls.set_curve_reconstruction_available(False)
-        self.controls.set_curve_harmonic_range(0, 0)
-        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
+        self.controls.reset_curve_controls()
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
         self.canvas.show_original(self.t, self.original_signal)
@@ -421,7 +570,13 @@ class MainWindow(QMainWindow):
         """Clear stale results and activate the canvas drawing region."""
         self._close_epicycle_window()
         self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
         self._clear_active_signal()
+        self.current_curve = None
+        self.curve_analysis = None
+        self.curve_reconstruction = None
+        self.curve_convergence = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -434,12 +589,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(True)
-        self.controls.set_curve_active(False)
-        self.controls.set_curve_analysis_available(False)
-        self.controls.set_curve_epicycle_available(False)
-        self.controls.set_curve_reconstruction_available(False)
-        self.controls.set_curve_harmonic_range(0, 0)
-        self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
+        self.controls.reset_curve_controls()
         self.controls.set_signal_available(False)
         self.controls.set_current_signal("Drawing custom signal...")
         self.canvas.start_drawing()
@@ -452,10 +602,13 @@ class MainWindow(QMainWindow):
         """Enter 2D curve mode and discard any previous curve."""
         self._close_epicycle_window()
         self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
         self._clear_active_signal()
         self.current_curve = None
         self.curve_analysis = None
         self.curve_reconstruction = None
+        self.curve_convergence = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -486,6 +639,7 @@ class MainWindow(QMainWindow):
     def _curve_candidate_ready(self, curve: Curve2D) -> None:
         """Store and display a released curve without running analysis."""
         self.current_curve = curve
+        self._update_action_state()
         if curve.is_valid:
             self.status_label.setText(
                 f"Curve captured with {curve.point_count} points. Click Finish / Close Curve."
@@ -530,16 +684,35 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Curve analysis failed", str(error))
             return
         self.curve_analysis = result
+        self.curve_convergence = analyze_curve_convergence(result)
         self.controls.set_curve_harmonic_range(result.maximum_harmonic, 0)
         self.controls.set_curve_analysis_available(True)
         self.controls.set_curve_reconstruction_available(True)
         self.controls.set_curve_epicycle_available(True)
+        self.controls.set_curve_spectrum_available(True)
+        self.controls.set_curve_error_available(True)
         self.update_curve_reconstruction(0)
         dc_x = result.x_coefficients[result.harmonics == 0][0].real
         dc_y = result.y_coefficients[result.harmonics == 0][0].real
+        x_min, x_max, y_min, y_max = (
+            self.current_curve.bounding_box
+            if self.current_curve.bounding_box is not None
+            else (0.0, 0.0, 0.0, 0.0)
+        )
+        area_str = (
+            f"{self.current_curve.estimated_area:.6g}"
+            if self.current_curve.estimated_area is not None
+            else "--"
+        )
         self.controls.set_curve_analysis_status(
             "2D Curve Analysis\n"
+            "Curve Type: Closed 2D\n"
             f"Points: {result.point_count}\n"
+            "Parameterization: Arc Length\n"
+            f"X Range: {x_min:.6g} to {x_max:.6g}\n"
+            f"Y Range: {y_min:.6g} to {y_max:.6g}\n"
+            f"Perimeter: {self.current_curve.perimeter:.6g}\n"
+            f"Estimated Area: {area_str}\n"
             f"Harmonics available: {result.maximum_harmonic}\n"
             f"DC X: {dc_x:.6g} | DC Y: {dc_y:.6g}\n"
             "Adjust 2D Harmonics N to view reconstruction error."
@@ -558,6 +731,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Reconstruction failed", str(error))
             return
         self.curve_reconstruction = reconstruction
+        selected_metrics: CurveErrorMetrics | None = None
+        if self.curve_convergence is not None:
+            selected_metrics = self.curve_convergence.for_harmonic(harmonic_count)
+        if self.curve2d_error_window is not None and self.curve_convergence is not None:
+            self.curve2d_error_window.update_selected(
+                self.curve_convergence.for_harmonic(harmonic_count)
+            )
         self.canvas.show_curve_reconstruction(
             self.curve_analysis.x_samples,
             self.curve_analysis.y_samples,
@@ -574,7 +754,11 @@ class MainWindow(QMainWindow):
             f"Available Harmonics: {self.curve_analysis.maximum_harmonic}\n"
             f"MSE: {reconstruction.mse:.6g}\n"
             f"RMSE: {reconstruction.rmse:.6g}\n"
-            f"Max Error: {reconstruction.maximum_error:.6g}"
+            f"Mean Error: {selected_metrics.mean_error:.6g}\n"
+            f"Max Error: {reconstruction.maximum_error:.6g}\n"
+            f"Largest Error t: {selected_metrics.maximum_parameter:.6g}"
+            if selected_metrics is not None
+            else f"Max Error: {reconstruction.maximum_error:.6g}"
         )
 
     def clear_curve(self) -> None:
@@ -582,13 +766,17 @@ class MainWindow(QMainWindow):
         self.current_curve = None
         self.curve_analysis = None
         self.curve_reconstruction = None
+        self.curve_convergence = None
         self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
         self.canvas.start_curve_drawing()
         self.controls.set_drawing_active(False)
         self.controls.set_curve_active(True)
         self.controls.set_curve_analysis_available(False)
         self.controls.set_curve_reconstruction_available(False)
         self.controls.set_curve_epicycle_available(False)
+        self.controls.set_curve_error_available(False)
         self.controls.set_curve_analysis_status("2D curve analysis: --")
         self.controls.set_curve_harmonic_range(0, 0)
         self.controls.set_curve_stats("2D Fourier Reconstruction\n--")
@@ -613,6 +801,45 @@ class MainWindow(QMainWindow):
         )
         self.curve2d_epicycle_window.show()
         self.status_label.setText("2D Fourier epicycle visualization opened.")
+
+    def show_curve2d_spectrum(self) -> None:
+        """Open the 2D harmonic spectrum using stored Fourier coefficients."""
+        if self.curve_analysis is None:
+            QMessageBox.warning(
+                self,
+                "No 2D analysis",
+                "Analyze a finalized 2D curve before opening its spectrum.",
+            )
+            return
+        self._close_curve2d_spectrum_window()
+        self.curve2d_spectrum_window = Curve2DSpectrumWindow(
+            self.curve_analysis,
+            self,
+        )
+        self.curve2d_spectrum_window.show()
+        self.status_label.setText("2D Fourier harmonic spectrum opened.")
+
+    def show_curve2d_error(self) -> None:
+        """Open the cached 2D reconstruction error and convergence view."""
+        if self.curve_analysis is None or self.curve_convergence is None:
+            QMessageBox.warning(
+                self,
+                "No 2D analysis",
+                "Analyze a finalized 2D curve before opening error analysis.",
+            )
+            return
+        self._close_curve2d_error_window()
+        selected = self.curve_convergence.for_harmonic(
+            self.controls.curve_harmonic_slider.value()
+        )
+        self.curve2d_error_window = Curve2DErrorWindow(
+            self.curve_analysis,
+            self.curve_convergence,
+            selected,
+            self,
+        )
+        self.curve2d_error_window.show()
+        self.status_label.setText("2D reconstruction error and convergence opened.")
 
     def finish_custom_drawing(
         self,
@@ -639,6 +866,7 @@ class MainWindow(QMainWindow):
         self.drawn_x = drawn_x
         self._set_active_signal(custom_time, custom_signal, "custom", "Custom")
         self.analysis_result = None
+        self.synthesizer = None
         self.reconstructed_signal = None
         self.error = None
         self.convergence_result = None
@@ -668,23 +896,25 @@ class MainWindow(QMainWindow):
 
         active_time, active_signal = self.active_signal_data
         num_harmonics = self.controls.num_harmonics
-        self.analysis_result = FourierAnalyzer(
-            active_time, active_signal, num_harmonics=self.MAX_HARMONICS
-        ).analyze()
-        synthesizer = FourierSynthesizer(
-            active_time,
-            self.analysis_result.a0,
-            self.analysis_result.a,
-            self.analysis_result.b,
-            self.analysis_result.omega0,
-        )
-        self.reconstructed_signal = synthesizer.reconstruct(num_harmonics)
+        if self.analysis_result is None or self.synthesizer is None:
+            self.analysis_result = FourierAnalyzer(
+                active_time, active_signal, num_harmonics=self.MAX_HARMONICS
+            ).analyze()
+            self.synthesizer = FourierSynthesizer(
+                active_time,
+                self.analysis_result.a0,
+                self.analysis_result.a,
+                self.analysis_result.b,
+                self.analysis_result.omega0,
+            )
+        if self.convergence_result is None:
+            self.convergence_result = analyze_convergence(
+                active_signal,
+                self.synthesizer,
+                np.arange(1, self.MAX_HARMONICS + 1),
+            )
+        self.reconstructed_signal = self.synthesizer.reconstruct(num_harmonics)
         self.error = active_signal - self.reconstructed_signal
-        self.convergence_result = analyze_convergence(
-            active_signal,
-            synthesizer,
-            np.arange(1, self.MAX_HARMONICS + 1),
-        )
         self.gibbs_result = analyze_gibbs(
             active_time, active_signal, self.reconstructed_signal
         )
@@ -791,12 +1021,27 @@ class MainWindow(QMainWindow):
             self.curve2d_epicycle_window.close()
             self.curve2d_epicycle_window = None
 
+    def _close_curve2d_spectrum_window(self) -> None:
+        """Close the 2D spectrum window, if open."""
+        if self.curve2d_spectrum_window is not None:
+            self.curve2d_spectrum_window.close()
+            self.curve2d_spectrum_window = None
+
+    def _close_curve2d_error_window(self) -> None:
+        """Close the 2D error/convergence window, if open."""
+        if self.curve2d_error_window is not None:
+            self.curve2d_error_window.close()
+            self.curve2d_error_window = None
+
     def reset(self) -> None:
         """Clear current signal state, metrics, and plots."""
         self._clear_active_signal()
         self.drawn_t = None
         self.drawn_x = None
         self.current_curve = None
+        self.curve_analysis = None
+        self.curve_reconstruction = None
+        self.curve_convergence = None
         self.analysis_result = None
         self.reconstructed_signal = None
         self.error = None
@@ -805,18 +1050,24 @@ class MainWindow(QMainWindow):
         self.fft_comparison = None
         self._close_epicycle_window()
         self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
         self.controls.reset_metrics()
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
-        self.controls.set_curve_active(False)
-        self.controls.set_curve_analysis_available(False)
-        self.controls.set_curve_reconstruction_available(False)
-        self.controls.set_curve_epicycle_available(False)
-        self.controls.set_curve_analysis_status("2D curve analysis: --")
+        self.controls.reset_curve_controls()
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.controls.set_current_signal("None")
         self.canvas.show_empty_state()
         self._update_action_state()
         self.status_label.setText("Choose a preset and click Generate.")
+
+    def closeEvent(self, event) -> None:
+        """Safely release and close all child windows and animation timers."""
+        self._close_epicycle_window()
+        self._close_curve2d_epicycle_window()
+        self._close_curve2d_spectrum_window()
+        self._close_curve2d_error_window()
+        super().closeEvent(event)

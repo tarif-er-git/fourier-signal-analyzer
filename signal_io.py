@@ -14,6 +14,8 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 
+from signal.curve2d import Curve2D
+
 
 @dataclass(frozen=True)
 class LoadedSignal:
@@ -21,6 +23,14 @@ class LoadedSignal:
 
     time: np.ndarray
     signal: np.ndarray
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class LoadedCurve:
+    """A validated 2D curve and its saved metadata."""
+
+    curve: Curve2D
     metadata: dict[str, object]
 
 
@@ -89,6 +99,13 @@ def load_signal(path: str | Path) -> LoadedSignal:
         raise ValueError(f"could not read valid signal JSON from {source}") from error
     if not isinstance(payload, dict):
         raise ValueError("signal file must contain a JSON object")
+    if (
+        payload.get("format") == "signal-sketch-and-decompose.curve2d.v1"
+        or payload.get("type") == "2d_closed_curve"
+    ):
+        raise ValueError(
+            "This file contains a 2D closed curve. Please use File -> Load 2D Curve instead."
+        )
     if payload.get("format") != "signal-sketch-and-decompose.signal.v1":
         raise ValueError("unsupported or missing signal file format")
     if "time" not in payload or "signal" not in payload:
@@ -100,6 +117,67 @@ def load_signal(path: str | Path) -> LoadedSignal:
         payload["time"], payload["signal"]
     )
     return LoadedSignal(time_values, signal_values, dict(metadata))
+
+
+def save_curve(
+    path: str | Path,
+    curve: Curve2D,
+    metadata: Mapping[str, object] | None = None,
+) -> None:
+    """Save raw and processed numerical data for a closed 2D curve."""
+    if not isinstance(curve, Curve2D) or not curve.is_valid:
+        raise ValueError("a valid closed 2D curve is required")
+    saved_metadata = _json_metadata(metadata)
+    saved_metadata.setdefault("point_count", curve.point_count)
+    saved_metadata.setdefault("perimeter", curve.perimeter)
+    payload = {
+        "format": "signal-sketch-and-decompose.curve2d.v1",
+        "type": "2d_closed_curve",
+        "version": 1,
+        "closed": curve.is_closed,
+        "raw_points": curve.raw_points.tolist(),
+        "cleaned_points": curve.cleaned_points.tolist(),
+        "normalized_points": curve.normalized_points.tolist(),
+        "metadata": saved_metadata,
+    }
+    destination = Path(path)
+    try:
+        destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as error:
+        raise OSError(f"could not save 2D curve to {destination}") from error
+
+
+def load_curve(path: str | Path) -> LoadedCurve:
+    """Load a versioned 2D curve JSON and rebuild its processed model."""
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"could not read valid 2D curve JSON from {source}") from error
+    if not isinstance(payload, dict):
+        raise ValueError("2D curve file must contain a JSON object")
+    if payload.get("format") == "signal-sketch-and-decompose.signal.v1":
+        raise ValueError(
+            "This file contains a 1D signal. Please use File -> Load Signal instead."
+        )
+    if payload.get("format") != "signal-sketch-and-decompose.curve2d.v1":
+        raise ValueError("unsupported or missing 2D curve file format")
+    if payload.get("type") != "2d_closed_curve":
+        raise ValueError("file is not a 2D closed curve")
+    if payload.get("version") != 1:
+        raise ValueError("unsupported 2D curve file version")
+    raw_points = payload.get("raw_points")
+    if raw_points is None:
+        raw_points = payload.get("cleaned_points")
+    if raw_points is None:
+        raise ValueError("2D curve file must contain points")
+    metadata = payload.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata must be a JSON object")
+    curve = Curve2D.from_points(raw_points, close=bool(payload.get("closed", True)))
+    if not curve.is_valid:
+        raise ValueError("loaded 2D curve must contain at least three valid points")
+    return LoadedCurve(curve, dict(metadata))
 
 
 def _write_csv(path: str | Path, headers: Sequence[str], rows: Sequence[Sequence[object]]) -> None:
@@ -156,6 +234,51 @@ def export_error(path: str | Path, time: Sequence[float], error: Sequence[float]
     """Export time and precomputed reconstruction error as CSV."""
     time_values, error_values = _validate_signal_arrays(time, error)
     _write_csv(path, ["time", "error"], zip(time_values, error_values))
+
+
+def export_curve_csv(path: str | Path, curve: Curve2D) -> None:
+    """Export cleaned mathematical curve vertices as ``index,x,y`` CSV."""
+    if not isinstance(curve, Curve2D) or not curve.is_valid:
+        raise ValueError("a valid closed 2D curve is required")
+    rows = ((index, point[0], point[1]) for index, point in enumerate(curve.cleaned_points))
+    _write_csv(path, ["index", "x", "y"], rows)
+
+
+def export_curve_reconstruction(path: str | Path, coefficients, reconstruction) -> None:
+    """Export original/reconstructed 2D samples and pointwise distance error."""
+    original_x = np.asarray(coefficients.x_samples, dtype=float)
+    original_y = np.asarray(coefficients.y_samples, dtype=float)
+    reconstructed_x = np.asarray(reconstruction.x, dtype=float)
+    reconstructed_y = np.asarray(reconstruction.y, dtype=float)
+    if not (
+        original_x.shape == original_y.shape == reconstructed_x.shape == reconstructed_y.shape
+    ) or original_x.ndim != 1:
+        raise ValueError("2D reconstruction arrays must have matching one-dimensional shapes")
+    if not all(np.all(np.isfinite(values)) for values in (original_x, original_y, reconstructed_x, reconstructed_y)):
+        raise ValueError("2D reconstruction values must be finite")
+    error = np.hypot(original_x - reconstructed_x, original_y - reconstructed_y)
+    rows = zip(range(original_x.size), original_x, original_y, reconstructed_x, reconstructed_y, error)
+    _write_csv(path, ["index", "original_x", "original_y", "reconstructed_x", "reconstructed_y", "error"], rows)
+
+
+def export_curve_coefficients(path: str | Path, coefficients) -> None:
+    """Export signed X/Y complex Fourier coefficients and derived values."""
+    rows = zip(
+        coefficients.harmonics,
+        coefficients.x_coefficients.real,
+        coefficients.x_coefficients.imag,
+        coefficients.x_magnitudes,
+        coefficients.x_phases,
+        coefficients.y_coefficients.real,
+        coefficients.y_coefficients.imag,
+        coefficients.y_magnitudes,
+        coefficients.y_phases,
+    )
+    _write_csv(
+        path,
+        ["k", "Cx_real", "Cx_imag", "Cx_magnitude", "Cx_phase", "Cy_real", "Cy_imag", "Cy_magnitude", "Cy_phase"],
+        rows,
+    )
 
 
 def export_analysis_report(path: str | Path, report: Mapping[str, object]) -> None:

@@ -143,6 +143,17 @@ class SignalCanvas(FigureCanvasQTAgg):
             self._configure_curve_axes()
             self.draw_idle()
 
+    def show_curve(self, curve: Curve2D) -> None:
+        """Display a saved curve as a candidate without starting mouse capture."""
+        if not curve.is_valid:
+            raise ValueError("a valid closed 2D curve is required")
+        self._drawing_active = False
+        self._drawing_mode = None
+        self._mouse_pressed = False
+        self._curve = curve
+        self._curve_points.clear()
+        self._render_curve(curve)
+
     def show_curve_reconstruction(
         self,
         original_x: Sequence[float],

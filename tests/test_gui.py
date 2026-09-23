@@ -23,9 +23,11 @@ def application():
 
 def _mouse_event(x: float, y: float) -> QMouseEvent:
     """Create a left-button event at a canvas-local widget position."""
+    pos = QPointF(x, y)
     return QMouseEvent(
         QMouseEvent.Type.MouseMove,
-        QPointF(x, y),
+        pos,
+        pos,
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
@@ -174,6 +176,87 @@ def test_2d_epicycle_view_uses_analyzed_curve(application) -> None:
     window.curve2d_epicycle_window.reset()
     window.curve2d_epicycle_window.close()
     window.curve2d_epicycle_window = None
+    window.close()
+
+
+def test_2d_harmonic_spectrum_uses_analyzed_curve(application) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0], [0.0, -0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+    window.controls.analyze_curve_button.click()
+    window.controls.curve_spectrum_button.click()
+
+    assert window.curve2d_spectrum_window is not None
+    assert window.curve2d_spectrum_window.table.rowCount() > 0
+    window.curve2d_spectrum_window.close()
+    window.curve2d_spectrum_window = None
+    window.close()
+
+
+def test_2d_error_convergence_view_uses_cached_analysis(application) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0], [0.0, -0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+    window.controls.analyze_curve_button.click()
+    window.controls.curve_error_button.click()
+
+    assert window.curve2d_error_window is not None
+    cached_convergence = window.curve_convergence
+    window.controls.curve_harmonic_slider.setValue(4)
+    assert window.curve_reconstruction.harmonic_count == 4
+    assert window.curve_convergence is cached_convergence
+    window.curve2d_error_window.close()
+    window.curve2d_error_window = None
+    window.close()
+
+
+def test_2d_curve_save_load_and_exports(application, monkeypatch, tmp_path) -> None:
+    window = MainWindow()
+    window.start_curve_drawing()
+    candidate = Curve2D.from_points(
+        [[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0], [0.0, -0.5]]
+    )
+    window.canvas._curve = candidate
+    window._curve_candidate_ready(candidate)
+    window.finish_curve_drawing()
+    curve_path = tmp_path / "curve.json"
+    curve_csv = tmp_path / "curve.csv"
+    reconstruction_csv = tmp_path / "reconstruction.csv"
+    coefficients_csv = tmp_path / "coefficients.csv"
+    save_paths = iter(
+        [str(curve_path), str(curve_csv), str(reconstruction_csv), str(coefficients_csv)]
+    )
+    monkeypatch.setattr(
+        "gui.main_window.QFileDialog.getSaveFileName",
+        lambda *_args, **_kwargs: (next(save_paths), "file"),
+    )
+    window.save_curve_file()
+    window.export_curve_csv_file()
+    window.controls.analyze_curve_button.click()
+    window.controls.curve_harmonic_slider.setValue(3)
+    window.export_curve_reconstruction_file()
+    window.export_curve_coefficients_file()
+    assert all(path.exists() for path in (curve_path, curve_csv, reconstruction_csv, coefficients_csv))
+
+    monkeypatch.setattr(
+        "gui.main_window.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: (str(curve_path), "JSON"),
+    )
+    window.load_curve_file()
+    assert window.current_curve is not None
+    assert window.curve_analysis is None
+    assert window.controls.analyze_curve_button.isEnabled()
+    assert not window.controls.curve_harmonic_slider.isEnabled()
     window.close()
 
 

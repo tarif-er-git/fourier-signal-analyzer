@@ -52,6 +52,42 @@ Click `Analyze Curve` after finalizing a curve. The analysis uses normalized cum
 
 Increasing the harmonic count generally makes more geometric detail available, although the error need not decrease monotonically for every curve or sampling shape. The coefficient calculation is reused while the harmonic control changes.
 
+## 2D Reconstruction Error and Convergence
+
+Click `2D Error & Convergence` after analyzing a curve. The view compares the original and reconstructed curves, draws pointwise error segments, plots error against normalized curve parameter `t`, and plots MSE/RMSE/mean/max error against harmonic count. The current harmonic count is marked on the convergence plot.
+
+For corresponding samples, pointwise Euclidean error is:
+
+```text
+e_i = sqrt((x_i - x_i(reconstructed))^2 + (y_i - y_i(reconstructed))^2)
+```
+
+The view reports MSE, RMSE, mean error, maximum error, and the normalized parameter location of the largest sampled error. Convergence values are calculated once from the stored Fourier coefficients and reused when the harmonic slider changes. More harmonics generally provide more degrees of freedom, but the actual computed convergence results should be used to interpret each curve.
+
+## 2D Fourier Harmonic Spectrum
+
+After `Analyze Curve`, click `2D Harmonic Spectrum`. The view reads the existing coordinate coefficients without recalculating them. For each signed harmonic index `k`, it shows:
+
+- X magnitude `|Cx[k]|` and phase `arg(Cx[k])`.
+- Y magnitude `|Cy[k]|` and phase `arg(Cy[k])`.
+- Combined 2D magnitude `sqrt(|Cx[k]|^2 + |Cy[k]|^2)`, a coordinate-contribution ranking rather than a physical power spectrum.
+
+The plots include positive and negative indices and the DC coefficient `k=0`. The table can be sorted by harmonic index or combined magnitude, and selecting a row shows the coefficient details. Harmonic index refers to the normalized curve parameter, not a physical frequency in hertz.
+
+## Saving a 2D Curve
+
+Use `File > Save 2D Curve` to save the numerical curve data as versioned JSON. The file preserves raw points, cleaned points, normalized points, closed status, and metadata; it is not an image or screenshot. Use `File > Load 2D Curve` to restore the curve. Loaded curves require fresh Fourier analysis before reconstruction-dependent actions are enabled.
+
+## Exporting Data
+
+- `Export 2D Curve CSV` writes cleaned mathematical vertices as `index,x,y`.
+- `Export 2D Reconstruction CSV` writes original samples, currently selected-harmonic reconstruction samples, and pointwise Euclidean error.
+- `Export 2D Fourier Coefficients` writes signed harmonic indices and real, imaginary, magnitude, and phase columns for both X and Y coefficients.
+
+## Analysis Summary
+
+The 2D analysis summary reports the closed-curve type, sampled point count, arc-length parameterization, X/Y ranges, approximate perimeter, estimated polygonal area, available harmonics, DC position, and selected reconstruction errors. The perimeter and area are estimates from the sampled polygon. Area is not interpreted as a physical enclosed area for self-intersecting curves.
+
 ## 2D Fourier Epicycle Visualization
 
 After analyzing a 2D curve, click `2D Epicycle View`. Each rotating vector represents one planar Fourier harmonic. For the existing X/Y coefficient convention, the planar coefficient is `C[k] = Cx[k] + j Cy[k]`, and the endpoint is calculated as:

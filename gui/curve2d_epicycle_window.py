@@ -141,6 +141,8 @@ class Curve2DEpicycleWindow(QMainWindow):
     def _advance(self) -> None:
         self.parameter = (self.parameter + self.PARAMETER_STEP) % 1.0
         self._trace.append(self.model.endpoint(self.parameter, self.harmonic_slider.value()))
+        if len(self._trace) > 480:
+            self._trace = self._trace[-480:]
         self._draw_frame()
 
     def _harmonics_changed(self, value: int) -> None:

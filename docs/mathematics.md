@@ -87,3 +87,72 @@ Direct numerical coefficient calculation is approximately `O(N^2)` when many har
 ## Epicycles
 
 A harmonic becomes a rotating vector. Its radius is `A_n`, its phase is `phi_n`, and its angular velocity is `n*w0`. Vectors are chained head-to-tail. The x-coordinate of the final endpoint equals the Fourier reconstruction because each vector contributes `A_n*cos(n*w0*t + phi_n)` to that coordinate. The y-coordinate makes the rotating-vector geometry visible.
+
+## 2D Closed Curve Fourier Analysis
+
+A closed curve in the 2D plane can be represented as a complex-valued periodic function of a parameter `t`:
+
+```text
+z(t) = x(t) + j y(t),  t in [0, 1)
+```
+
+### Arc-Length Parameterization
+
+To avoid clustering distortion from variable drawing speeds, the polygonal curve is parameterized by its normalized cumulative arc length:
+
+```text
+s_0 = 0
+s_i = s_{i-1} + ||p_i - p_{i-1}||_2,  for i = 1..M-1
+L = s_{M-1} + ||p_0 - p_{M-1}||_2
+t_i = s_i / L
+```
+
+The curve is then resampled at uniform intervals `t_m = m / num_samples` for `m = 0..num_samples - 1`.
+
+### Complex Fourier Series
+
+The complex Fourier coefficients for the coordinates are obtained via the discrete Fourier transform:
+
+```text
+c_k = (1 / M) sum_{m=0}^{M-1} z(t_m) exp(-j 2 pi k m / M) = X_k + j Y_k
+```
+
+where:
+- `k = 0` is the DC component representing the centroid `(mean(x), mean(y))`.
+- For real coordinate signals `x(t)` and `y(t)`, the coefficients satisfy Hermitian symmetry: `X_{-k} = X_k^*` and `Y_{-k} = Y_k^*`.
+
+### Symmetric Harmonic Reconstruction
+
+Reconstructing with harmonic count `N` sums symmetric positive and negative harmonics:
+
+```text
+z_N(t) = sum_{k=-N}^{N} c_k exp(j 2 pi k t) = x_N(t) + j y_N(t)
+```
+
+Because of Hermitian symmetry, the real and imaginary parts of `z_N(t)` correspond exactly to the independent trigonometric reconstructions of `x(t)` and `y(t)`:
+
+```text
+x_N(t) = Re( sum_{k=-N}^{N} X_k exp(j 2 pi k t) )
+y_N(t) = Re( sum_{k=-N}^{N} Y_k exp(j 2 pi k t) )
+```
+
+### 2D Geometric Error Metrics
+
+For each sampled parameter point `t_m`, the pointwise Euclidean distance error is:
+
+```text
+e_m = sqrt( (x[m] - x_N[m])^2 + (y[m] - y_N[m])^2 )
+```
+
+Aggregate metrics are computed over all `M` samples:
+
+```text
+MSE = (1 / M) sum_{m=0}^{M-1} e_m^2
+RMSE = sqrt(MSE)
+Mean Error = (1 / M) sum_{m=0}^{M-1} e_m
+Max Error = max_{m} e_m
+```
+
+### 2D Complex Epicycles
+
+In 2D epicycles, each harmonic term `c_k exp(j 2 pi k t)` is a rotating planar vector with radius `|c_k|` and instantaneous phase angle. Vectors for `k in {-N, ..., N}` are chained head-to-tail starting from the origin. The final tip of the chain traces out the reconstructed curve `z_N(t)` directly in the Cartesian plane.

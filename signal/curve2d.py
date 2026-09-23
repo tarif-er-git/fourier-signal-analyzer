@@ -69,6 +69,40 @@ class Curve2D:
         """Return the number of unique cleaned vertices."""
         return int(self.cleaned_points.shape[0])
 
+    @property
+    def width(self) -> float:
+        """Return the curve bounding-box width."""
+        if self.bounding_box is None:
+            return 0.0
+        return self.bounding_box[1] - self.bounding_box[0]
+
+    @property
+    def height(self) -> float:
+        """Return the curve bounding-box height."""
+        if self.bounding_box is None:
+            return 0.0
+        return self.bounding_box[3] - self.bounding_box[2]
+
+    @property
+    def perimeter(self) -> float:
+        """Return the approximate closed polygonal path length."""
+        if self.cleaned_points.shape[0] < 2:
+            return 0.0
+        segments = np.roll(self.cleaned_points, -1, axis=0) - self.cleaned_points
+        return float(np.sum(np.linalg.norm(segments, axis=1)))
+
+    @property
+    def estimated_area(self) -> float | None:
+        """Return the absolute polygonal area estimate, if enough points exist."""
+        if self.cleaned_points.shape[0] < 3:
+            return None
+        next_points = np.roll(self.cleaned_points, -1, axis=0)
+        cross_sum = np.sum(
+            self.cleaned_points[:, 0] * next_points[:, 1]
+            - next_points[:, 0] * self.cleaned_points[:, 1]
+        )
+        return float(abs(cross_sum) / 2.0)
+
 
 def _as_points(points: Sequence[Sequence[float]]) -> np.ndarray:
     """Convert a point sequence to a two-column floating-point array."""

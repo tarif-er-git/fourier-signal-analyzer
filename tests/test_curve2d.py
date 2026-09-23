@@ -53,6 +53,17 @@ def test_bounding_box_and_normalization() -> None:
     np.testing.assert_allclose(curve.normalized_points.max(axis=0), [1.0, 1.0])
 
 
+def test_curve_geometry_statistics_for_rectangle() -> None:
+    curve = Curve2D.from_points(
+        [[0.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]]
+    )
+
+    assert curve.width == pytest.approx(3.0)
+    assert curve.height == pytest.approx(2.0)
+    assert curve.perimeter == pytest.approx(10.0)
+    assert curve.estimated_area == pytest.approx(6.0)
+
+
 def test_raw_points_are_preserved() -> None:
     raw = np.array([[0.0, 0.0], [0.0, 0.0], [1.0, 1.0]])
 

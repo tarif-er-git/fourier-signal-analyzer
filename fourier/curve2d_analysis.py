@@ -33,13 +33,21 @@ class CurveFourierResult:
 
     @property
     def x_phases(self) -> np.ndarray:
-        """Return phases of the X coefficients in radians."""
-        return np.angle(self.x_coefficients)
+        """Return phases of the X coefficients in radians.
+
+        Coefficients with near-zero magnitude receive phase zero by convention.
+        """
+        phases = np.angle(self.x_coefficients)
+        return np.where(np.isclose(self.x_magnitudes, 0.0, atol=1e-12), 0.0, phases)
 
     @property
     def y_phases(self) -> np.ndarray:
-        """Return phases of the Y coefficients in radians."""
-        return np.angle(self.y_coefficients)
+        """Return phases of the Y coefficients in radians.
+
+        Coefficients with near-zero magnitude receive phase zero by convention.
+        """
+        phases = np.angle(self.y_coefficients)
+        return np.where(np.isclose(self.y_magnitudes, 0.0, atol=1e-12), 0.0, phases)
 
     @property
     def point_count(self) -> int:
@@ -177,9 +185,13 @@ def calculate_curve_error(
     parameter, x_values, y_values = reconstruct_curve(
         coefficients, harmonic_count=harmonic_count
     )
-    x_error = coefficients.x_samples - x_values
-    y_error = coefficients.y_samples - y_values
-    squared_distance = x_error**2 + y_error**2
+    errors = pointwise_curve_error(
+        coefficients.x_samples,
+        coefficients.y_samples,
+        x_values,
+        y_values,
+    )
+    squared_distance = errors**2
     mse = float(np.mean(squared_distance))
     return CurveReconstruction(
         parameter=parameter,
@@ -190,6 +202,26 @@ def calculate_curve_error(
         maximum_error=float(np.sqrt(np.max(squared_distance))),
         harmonic_count=int(harmonic_count),
     )
+
+
+def pointwise_curve_error(
+    original_x: Sequence[float],
+    original_y: Sequence[float],
+    reconstructed_x: Sequence[float],
+    reconstructed_y: Sequence[float],
+) -> np.ndarray:
+    """Return Euclidean error for corresponding 2D curve samples."""
+    arrays = tuple(
+        np.asarray(values, dtype=float)
+        for values in (original_x, original_y, reconstructed_x, reconstructed_y)
+    )
+    if any(values.ndim != 1 for values in arrays):
+        raise ValueError("curve coordinates must be one-dimensional")
+    if not (arrays[0].shape == arrays[1].shape == arrays[2].shape == arrays[3].shape):
+        raise ValueError("curve coordinate arrays must have matching shapes")
+    if not all(np.all(np.isfinite(values)) for values in arrays):
+        raise ValueError("curve coordinates must be finite")
+    return np.hypot(arrays[0] - arrays[2], arrays[1] - arrays[3])
 
 
 def _curve_points(

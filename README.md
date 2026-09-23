@@ -13,6 +13,8 @@ The project also demonstrates the Gibbs phenomenon, convergence as the number of
 - Mouse drawing of a normalized 2D closed curve.
 - Fourier coefficient analysis and reconstruction of closed 2D curves.
 - Interactive 2D Fourier epicycle visualization.
+- 2D curve save/load and CSV data export.
+- 2D coordinate magnitude, phase, and combined harmonic spectrum.
 - Uniform sampling and preprocessing.
 - Numerical Fourier Series coefficients `a0`, `an`, and `bn`.
 - Reconstruction with selectable harmonic count `N`.
