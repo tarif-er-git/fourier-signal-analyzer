@@ -71,32 +71,44 @@ def test_custom_signal_becomes_active_reconstruction_input(application) -> None:
 
 
 def test_custom_drawing_starts_with_full_zero_baseline(application) -> None:
+    """start_custom_drawing now opens a SignalDrawingDialog instead of drawing
+    inline on the main canvas. Verify the dialog is created and the main canvas
+    stays in its default (empty/cleared) state.
+    """
     window = MainWindow()
 
     window.start_custom_drawing()
 
-    np.testing.assert_allclose(window.canvas._drawn_t, np.linspace(0.0, 1.0, 1001))
-    np.testing.assert_allclose(window.canvas._drawn_x, 0.0)
+    # A drawing dialog should now be open
+    assert window._drawing_dialog is not None
+    # The main canvas should NOT have a baseline signal set
+    assert window.canvas._drawing_active is False
+    assert len(window.canvas._drawn_t) == 0
+    window._drawing_dialog.close()
     window.close()
 
 
 def test_custom_drawing_accumulates_multiple_strokes(application) -> None:
+    """Verify that finish_custom_drawing processes (t, x) arrays correctly
+    when called with explicit data (as the SignalDrawingDialog does on accept).
+    """
     window = MainWindow()
-    window.start_custom_drawing()
 
-    window.canvas._stroke_t = [0.1, 0.3]
-    window.canvas._stroke_x = [1.0, 1.0]
-    window.canvas._update_drawn_signal()
-    first_stroke = np.asarray(window.canvas._drawn_x, dtype=float).copy()
+    # Build a signal that covers at least 50% of the time domain (required by
+    # prepare_custom_signal's minimum_time_span=0.5 guard).
+    drawn_t = np.linspace(0.0, 1.0, 1001)
+    drawn_x = np.zeros(1001)
+    # Positive region in the first half
+    drawn_x[100:300] = 1.0
+    # Negative region in the second half
+    drawn_x[700:900] = -1.0
 
-    window.canvas._stroke_t = [0.7, 0.9]
-    window.canvas._stroke_x = [-1.0, -1.0]
-    window.canvas._update_drawn_signal()
-    second_stroke = np.asarray(window.canvas._drawn_x, dtype=float)
+    window.finish_custom_drawing(drawn_t, drawn_x)
 
-    assert np.max(first_stroke) == pytest.approx(1.0)
-    assert np.min(second_stroke) == pytest.approx(-1.0)
-    assert second_stroke[200] == pytest.approx(first_stroke[200])
+    assert window.t is not None
+    assert window.original_signal is not None
+    assert np.max(window.original_signal) == pytest.approx(1.0, abs=0.1)
+    assert np.min(window.original_signal) == pytest.approx(-1.0, abs=0.1)
     window.close()
 
 
@@ -301,12 +313,16 @@ def test_nonconstant_custom_signal_is_not_replaced_by_sine(application) -> None:
 
 
 def test_custom_finish_and_reconstruct_buttons_use_custom_state(application) -> None:
+    """Drawing dialog calls finish_custom_drawing(t, x) on accept; verify that
+    the custom signal becomes the active signal and can be reconstructed."""
     window = MainWindow()
-    window.controls.draw_button.click()
-    window.canvas._drawn_t = [0.0, 0.25, 0.5, 0.75, 1.0]
-    window.canvas._drawn_x = [0.0, 1.0, 0.0, -1.0, 0.0]
 
-    window.controls.finish_drawing_button.click()
+    # Simulate what SignalDrawingDialog does when the user clicks 'Use This Signal'
+    drawn_t = np.linspace(0.0, 1.0, 1001)
+    drawn_x = np.zeros(1001)
+    drawn_x[100:900] = np.sin(2.0 * np.pi * drawn_t[100:900] * 3.0)
+
+    window.finish_custom_drawing(drawn_t, drawn_x)
     window.controls.reconstruct_button.click()
 
     assert window.active_signal_type == "custom"

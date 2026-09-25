@@ -42,6 +42,7 @@ from gui.curve2d_error_window import Curve2DErrorWindow
 from gui.drawing import prepare_custom_signal
 from gui.epicycle_window import EpicycleWindow
 from gui.fft_dialog import FFTComparisonDialog
+from gui.signal_drawing_dialog import SignalDrawingDialog
 from signal.curve2d import Curve2D
 from metrics.convergence import ConvergenceResult, analyze_convergence
 from metrics.error import (
@@ -105,6 +106,7 @@ class MainWindow(QMainWindow):
         self.curve2d_error_window: Curve2DErrorWindow | None = None
         self.convolution_window: ConvolutionWindow | None = None
         self.fft_dialog: FFTComparisonDialog | None = None
+        self._drawing_dialog: SignalDrawingDialog | None = None
         self.file_actions: dict[str, QAction] = {}
 
         self._build_layout()
@@ -574,36 +576,28 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Exported analysis report to {path}")
 
     def start_custom_drawing(self) -> None:
-        """Clear stale results and activate the canvas drawing region."""
+        """Open the dedicated signal drawing dialog (freehand, same as convolution)."""
         self._close_epicycle_window()
         self._close_curve2d_epicycle_window()
         self._close_curve2d_spectrum_window()
         self._close_curve2d_error_window()
-        self._clear_active_signal()
-        self.current_curve = None
-        self.curve_analysis = None
-        self.curve_reconstruction = None
-        self.curve_convergence = None
-        self.analysis_result = None
-        self.reconstructed_signal = None
-        self.error = None
-        self.convergence_result = None
-        self.gibbs_result = None
-        self.fft_comparison = None
-        self.drawn_t = None
-        self.drawn_x = None
-        self.controls.reset_metrics()
-        self.controls.reset_gibbs()
-        self.controls.reset_fft_timing()
-        self.controls.set_drawing_active(True)
-        self.controls.reset_curve_controls()
-        self.controls.set_signal_available(False)
-        self.controls.set_current_signal("Drawing custom signal...")
-        self.canvas.start_drawing()
-        self._update_action_state()
+        # Close any existing drawing dialog before opening a new one
+        if self._drawing_dialog is not None:
+            self._drawing_dialog.close()
+            self._drawing_dialog = None
+        self._drawing_dialog = SignalDrawingDialog(self)
+        self._drawing_dialog.signal_accepted.connect(self._on_drawing_accepted)
+        self._drawing_dialog.show()
         self.status_label.setText(
-            "Drag the line as many times as needed, then click Finish Drawing."
+            "Draw your signal in the popup window, then click 'Use This Signal'."
         )
+
+    def _on_drawing_accepted(
+        self, drawn_t: np.ndarray, drawn_x: np.ndarray
+    ) -> None:
+        """Called when the user confirms a drawing in the drawing dialog."""
+        self.finish_custom_drawing(drawn_t, drawn_x)
+        self._drawing_dialog = None
 
     def start_curve_drawing(self) -> None:
         """Enter 2D curve mode and discard any previous curve."""
@@ -856,6 +850,7 @@ class MainWindow(QMainWindow):
         """Process completed raw points into the application's signal grid."""
         try:
             if drawn_t is None or drawn_x is None:
+                # Fallback: try to finish drawing from inline canvas (legacy path)
                 drawn_t, drawn_x = self.canvas.finish_drawing()
             if drawn_t.size < 2:
                 raise ValueError("Please draw a signal by dragging across the canvas.")
@@ -871,9 +866,12 @@ class MainWindow(QMainWindow):
 
         self.drawn_t = drawn_t
         self.drawn_x = drawn_x
-        self._set_active_signal(custom_time, custom_signal, "custom", "Custom")
+        self._clear_active_signal()
+        self.current_curve = None
+        self.curve_analysis = None
+        self.curve_reconstruction = None
+        self.curve_convergence = None
         self.analysis_result = None
-        self.synthesizer = None
         self.reconstructed_signal = None
         self.error = None
         self.convergence_result = None
@@ -883,9 +881,11 @@ class MainWindow(QMainWindow):
         self.controls.reset_gibbs()
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
+        self.controls.reset_curve_controls()
         self.controls.set_signal_available(True)
         self.controls.set_reconstruction_available(False)
-        self.canvas.finish_drawing()
+        self._set_active_signal(custom_time, custom_signal, "custom", "Custom")
+        self.canvas.clear_drawing()
         self.canvas.show_original(self.t, self.original_signal)
         self._update_action_state()
         self.status_label.setText("Custom signal ready for reconstruction.")

@@ -310,7 +310,6 @@ class ControlPanel(QWidget):
         signal_layout.addLayout(button_row)
         drawing_row = QHBoxLayout()
         drawing_row.addWidget(self.draw_button)
-        drawing_row.addWidget(self.finish_drawing_button)
         signal_layout.addLayout(drawing_row)
         curve_row = QHBoxLayout()
         curve_row.addWidget(self.draw_curve_button)
