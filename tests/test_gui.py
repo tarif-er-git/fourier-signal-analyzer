@@ -468,3 +468,35 @@ def test_reconstruct_before_generate_shows_user_message(application, monkeypatch
         "Generate or finish drawing a signal before reconstructing it."
     ]
     window.close()
+
+
+def test_load_composite_signal_reconstruction_mse_decreases(
+    application, monkeypatch, tmp_path
+) -> None:
+    from pathlib import Path
+
+    composite_path = Path("saved signals/composite_signal.json").resolve()
+    if not composite_path.exists():
+        pytest.skip("saved signals/composite_signal.json not found")
+
+    window = MainWindow()
+    monkeypatch.setattr(
+        "gui.main_window.QFileDialog.getOpenFileName",
+        lambda *_args, **_kwargs: (str(composite_path), "JSON"),
+    )
+    window.load_signal_file()
+    assert window.t is not None
+    assert len(window.t) == 21
+    # Check that maximum harmonics are clamped to Nyquist limit (10)
+    assert window.controls.harmonic_slider.maximum() == 10
+
+    window.reconstruct_signal()
+    assert window.convergence_result is not None
+    mse_vals = window.convergence_result.mse_values
+    assert len(mse_vals) == 10
+    # MSE must decrease monotonically and converge to ~0
+    assert mse_vals[-1] < mse_vals[0]
+    assert np.all(np.diff(mse_vals) <= 1e-12)
+    assert mse_vals[-1] < 1e-8
+    window.close()
+

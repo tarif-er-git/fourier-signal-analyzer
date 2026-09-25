@@ -171,3 +171,18 @@ def test_synthesizer_rejects_negative_non_integer_and_oversized_n() -> None:
         synthesizer.reconstruct(1.5)
     with pytest.raises(ValueError):
         synthesizer.reconstruct(3)
+
+
+def test_compute_fourier_series_and_mse_vs_harmonics() -> None:
+    from fourier.synthesis import compute_fourier_series, compute_mse_vs_harmonics
+
+    t = np.linspace(0.0, 1.0, 1001)
+    x = np.sin(2.0 * np.pi * t)
+    rec = compute_fourier_series(t, x, 1)
+    np.testing.assert_allclose(rec, x, atol=2e-3)
+
+    mse_list = compute_mse_vs_harmonics(t, x, 5)
+    assert len(mse_list) == 5
+    assert mse_list[0] < 1e-5
+    # MSE stays low/converged
+    assert all(m < 1e-5 for m in mse_list)

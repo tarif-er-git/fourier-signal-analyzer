@@ -228,6 +228,19 @@ class ControlPanel(QWidget):
         """Display a compact 2D curve analysis result."""
         self.curve_analysis_label.setText(status)
 
+    def set_harmonic_range(self, maximum: int, value: int | None = None) -> None:
+        """Set the available 1D harmonic range and update slider bounds."""
+        max_val = max(1, int(maximum))
+        self.harmonic_slider.blockSignals(True)
+        self.harmonic_slider.setRange(1, max_val)
+        if value is not None:
+            self.harmonic_slider.setValue(min(max(1, int(value)), max_val))
+        elif self.harmonic_slider.value() > max_val:
+            self.harmonic_slider.setValue(max_val)
+        current_val = self.harmonic_slider.value()
+        self.harmonic_value.setText(str(current_val))
+        self.harmonic_slider.blockSignals(False)
+
     def set_curve_harmonic_range(self, maximum: int, value: int = 0) -> None:
         """Set the available 2D harmonic range and selected value."""
         self.curve_harmonic_slider.blockSignals(True)

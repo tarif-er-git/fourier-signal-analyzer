@@ -237,6 +237,8 @@ class MainWindow(QMainWindow):
         self.synthesizer = None
         self.convergence_result = None
         self.controls.set_current_signal(display_name)
+        max_harmonics = min(self.MAX_HARMONICS, max(1, (len(time_values) - 1) // 2))
+        self.controls.set_harmonic_range(max_harmonics)
 
     def _clear_active_signal(self) -> None:
         """Clear the active signal while preserving no stale source state."""
@@ -900,10 +902,12 @@ class MainWindow(QMainWindow):
             return
 
         active_time, active_signal = self.active_signal_data
-        num_harmonics = self.controls.num_harmonics
+        max_harmonics = min(self.MAX_HARMONICS, max(1, (len(active_signal) - 1) // 2))
+        self.controls.set_harmonic_range(max_harmonics)
+        num_harmonics = min(self.controls.num_harmonics, max_harmonics)
         if self.analysis_result is None or self.synthesizer is None:
             self.analysis_result = FourierAnalyzer(
-                active_time, active_signal, num_harmonics=self.MAX_HARMONICS
+                active_time, active_signal, num_harmonics=max_harmonics
             ).analyze()
             self.synthesizer = FourierSynthesizer(
                 active_time,
@@ -916,7 +920,7 @@ class MainWindow(QMainWindow):
             self.convergence_result = analyze_convergence(
                 active_signal,
                 self.synthesizer,
-                np.arange(1, self.MAX_HARMONICS + 1),
+                np.arange(1, max_harmonics + 1),
             )
         self.reconstructed_signal = self.synthesizer.reconstruct(num_harmonics)
         self.error = active_signal - self.reconstructed_signal
@@ -1098,6 +1102,7 @@ class MainWindow(QMainWindow):
         self.controls.reset_fft_timing()
         self.controls.set_drawing_active(False)
         self.controls.reset_curve_controls()
+        self.controls.set_harmonic_range(self.MAX_HARMONICS, 10)
         self.controls.set_signal_available(False)
         self.controls.set_reconstruction_available(False)
         self.controls.set_current_signal("None")

@@ -133,3 +133,49 @@ class FourierSynthesizer:
             + np.sin(angles) * self.b[:count]
         )
         return reconstructed + np.sum(contributions, axis=1)
+
+
+def compute_fourier_series(
+    time: Sequence[float], signal: Sequence[float], num_harmonics: int
+) -> np.ndarray:
+    """Reconstruct a signal from its computed Fourier series coefficients.
+
+    Always initializes a fresh DC component array before accumulating harmonics
+    to prevent unintended amplitude accumulation.
+    """
+    time_arr = np.asarray(time, dtype=float)
+    sig_arr = np.asarray(signal, dtype=float)
+    N = len(sig_arr)
+    T = time_arr[-1] - time_arr[0]
+
+    # 1. DC Component (a0)
+    a0 = (1 / N) * np.sum(sig_arr)
+
+    # Fresh array allocation
+    reconstructed = np.full_like(sig_arr, a0, dtype=float)
+
+    # 2. Harmonics
+    for k in range(1, num_harmonics + 1):
+        omega = 2 * np.pi * k / T
+        an = (2 / N) * np.sum(sig_arr * np.cos(omega * time_arr))
+        bn = (2 / N) * np.sum(sig_arr * np.sin(omega * time_arr))
+
+        reconstructed += an * np.cos(omega * time_arr) + bn * np.sin(omega * time_arr)
+
+    return reconstructed
+
+
+def compute_mse_vs_harmonics(
+    time: Sequence[float], signal: Sequence[float], max_harmonics: int
+) -> list[float]:
+    """Compute fresh reconstruction and MSE for each harmonic count up to max_harmonics."""
+    time_arr = np.asarray(time, dtype=float)
+    sig_arr = np.asarray(signal, dtype=float)
+    mse_list = []
+    for h in range(1, max_harmonics + 1):
+        # Always compute FRESH reconstruction for each h
+        rec = compute_fourier_series(time_arr, sig_arr, h)
+        mse = float(np.mean((sig_arr - rec) ** 2))
+        mse_list.append(mse)
+    return mse_list
+

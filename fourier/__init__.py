@@ -17,7 +17,11 @@ from .curve2d_error import (
     analyze_curve_convergence,
     evaluate_curve_error,
 )
-from .synthesis import FourierSynthesizer
+from .synthesis import (
+    FourierSynthesizer,
+    compute_fourier_series,
+    compute_mse_vs_harmonics,
+)
 from .spectrum import FourierSpectrum
 
 __all__ = [
@@ -31,6 +35,8 @@ __all__ = [
     "analyze_curve",
     "analyze_curve_convergence",
     "calculate_curve_error",
+    "compute_fourier_series",
+    "compute_mse_vs_harmonics",
     "evaluate_curve_error",
     "parameterize_curve",
     "pointwise_curve_error",
